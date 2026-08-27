@@ -27,18 +27,25 @@ from pathlib import Path
 import yaml
 
 
+from ulpf.core.registry import get_all_parsers
+
+
 _ASA_RE = re.compile(r'%ASA-\d-\d+')
-_CEF_RE = re.compile(r'(?:^|<\d+>\S+\s+\S+\s+\S+\s+)CEF:\d')
+# Match CEF:/LEEF: markers either at the very start of the line, or immediately
+# after ANY syslog envelope (RFC3164, RFC5424, or vendor variants with a
+# different number of header tokens) — i.e. right after whitespace.
+_CEF_RE = re.compile(r'(?:^|\s)CEF:\d')
+_LEEF_RE = re.compile(r'(?:^|\s)LEEF:[0-9.]+\|')
 _RFC5424_RE = re.compile(r'^<\d+>1\s')
 _RFC3164_RE = re.compile(r'^<\d+>(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s')
 _RFC3164_ALT_RE = re.compile(r'^<\d+>\d{4}-')
-_LEEF_RE = re.compile(r'^LEEF:[0-9.]+\|')
 _KV_RE = re.compile(r'\b\w+=\S+')
 
 
 class FormatDetector:
     """
     Classifies raw log lines into format_id strings that match parser names.
+    Supports dynamic parser self-registration with intelligent priority ordering.
     """
 
     def __init__(self, sources_config_path: str | Path | None = None):
@@ -66,31 +73,42 @@ class FormatDetector:
 
         stripped = raw_line.strip()
 
-        # 2. Cisco ASA (before RFC3164 check since it IS RFC3164 wrapped)
+        # 2. Priority matchers for encapsulated / structured formats
+        # Cisco ASA (%ASA- mnemonic inside syslog envelope)
         if _ASA_RE.search(stripped):
             return 'cisco_asa'
 
-        # 3. CEF
+        # CEF (ArcSight, with or without syslog envelope)
         if _CEF_RE.search(stripped):
             return 'cef'
 
-        # 4. LEEF (check before syslog since LEEF may have syslog prefix)
-        if _LEEF_RE.match(stripped):
+        # LEEF (IBM QRadar, with or without syslog envelope)
+        if _LEEF_RE.search(stripped):
             return 'leef'
 
-        # 5. RFC 5424
+        # RFC 5424 structured syslog
         if _RFC5424_RE.match(stripped):
             return 'syslog_rfc5424'
 
-        # 6. RFC 3164 (BSDsyslog with month name or ISO-date variant)
-        if _RFC3164_RE.match(stripped) or _RFC3164_ALT_RE.match(stripped):
-            return 'syslog_rfc3164'
-
-        # 7. XML / Windows Event Log (must be XML tag, not syslog <PRI>)
+        # Windows / Generic XML
         if stripped.startswith('<?xml') or re.match(r'^\s*<[a-zA-Z_]', stripped):
             return 'xml_generic'
 
-        # 8. PAN CSV — TRAFFIC in col 2, enough columns
+        # JSON formats (CloudTrail, Azure, GCP, Generic)
+        if stripped.startswith('{'):
+            try:
+                obj = json.loads(stripped)
+                if 'eventVersion' in obj and 'eventSource' in obj and str(obj.get('eventSource', '')).endswith('.amazonaws.com'):
+                    return 'aws_cloudtrail'
+                if 'protoPayload' in obj and ('logName' in obj or 'insertId' in obj) and str(obj.get('protoPayload', {}).get('@type', '')).startswith('type.googleapis.com/google.cloud.audit'):
+                    return 'gcp_audit'
+                if 'operationName' in obj and 'resourceId' in obj and ('resultType' in obj or 'category' in obj):
+                    return 'azure_monitor'
+                return 'json_passthrough'
+            except json.JSONDecodeError:
+                pass
+
+        # PAN CSV
         if ',' in stripped and 'TRAFFIC' in stripped:
             try:
                 rows = list(csv.reader(io.StringIO(stripped)))
@@ -99,39 +117,19 @@ class FormatDetector:
             except Exception:
                 pass
 
-        # 9. JSON — check specific cloud schemas before generic fallback
-        if stripped.startswith('{'):
+        # RFC 3164 BSD syslog
+        if _RFC3164_RE.match(stripped) or _RFC3164_ALT_RE.match(stripped):
+            return 'syslog_rfc3164'
+
+        # 3. Dynamic evaluation of all registered parsers (for plug-and-play extensions)
+        for parser in get_all_parsers():
             try:
-                obj = json.loads(stripped)
-                # AWS CloudTrail
-                if (
-                    'eventVersion' in obj and
-                    'eventSource' in obj and
-                    str(obj.get('eventSource', '')).endswith('.amazonaws.com')
-                ):
-                    return 'aws_cloudtrail'
-                # GCP Audit Log
-                if (
-                    'protoPayload' in obj and
-                    ('logName' in obj or 'insertId' in obj) and
-                    str(obj.get('protoPayload', {}).get('@type', '')).startswith(
-                        'type.googleapis.com/google.cloud.audit'
-                    )
-                ):
-                    return 'gcp_audit'
-                # Azure Monitor
-                if (
-                    'operationName' in obj and
-                    'resourceId' in obj and
-                    ('resultType' in obj or 'category' in obj)
-                ):
-                    return 'azure_monitor'
-                # Generic JSON fallback
-                return 'json_passthrough'
-            except json.JSONDecodeError:
+                if parser.match(raw_line):
+                    return parser.name
+            except Exception:
                 pass
 
-        # 10. Key-value
+        # 4. Key-value fallback
         if _KV_RE.search(stripped):
             return 'kv'
 

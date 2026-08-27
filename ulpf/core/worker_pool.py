@@ -5,6 +5,11 @@ Uses multiprocessing.Pool to distribute ingestion across N worker processes.
 Each worker runs an independent Pipeline instance (shared-nothing architecture).
 The main process collects and merges per-worker stats.
 
+IMPORTANT: `pipeline_factory` must be picklable — a closure defined inside
+another function is NOT picklable and will crash the pool at dispatch time.
+Use a module-level function bound via functools.partial (see ulpf.cli for
+the reference implementation) or any other top-level callable.
+
 Usage via CLI:
     ulpf ingest --input /var/log/sources --output output --workers 8
 
@@ -21,31 +26,35 @@ from __future__ import annotations
 
 import logging
 import multiprocessing
-import os
 import signal
+import os
 from datetime import datetime, timezone
-from pathlib import Path
-from typing import Any, Callable
+from typing import Any, Callable, Iterator
 
 logger = logging.getLogger(__name__)
 
 # Maximum lines to buffer per worker chunk
 DEFAULT_CHUNK_SIZE = 500
 
+# One (raw_line, source_tag, ingest_ts_iso, raw_bytes) tuple per event
+_ChunkItem = tuple[str, str, str, bytes]
+
 
 def _worker_process(
-    chunk: list[tuple[str, str, str]],
+    args: tuple[list[_ChunkItem], int, str],
     pipeline_factory: Callable,
-    worker_id: int,
 ) -> dict[str, int]:
     """
-    Worker process function. Runs in a separate process.
-    
+    Worker process entry point. Runs in a separate process.
+
     Args:
-        chunk: list of (raw_line, source_tag, ingest_timestamp_iso) tuples
-        pipeline_factory: callable that returns a new Pipeline instance
-        worker_id: integer worker identifier for logging
+        args: (chunk, worker_id, tenant_id) — bundled into one tuple so this
+              function has a fixed two-parameter signature and can be bound
+              via functools.partial for pool.imap_unordered.
+        pipeline_factory: picklable callable that returns a new Pipeline instance.
     """
+    chunk, worker_id, tenant_id = args
+
     # Ignore SIGINT in workers — let main process handle it
     signal.signal(signal.SIGINT, signal.SIG_IGN)
 
@@ -54,33 +63,37 @@ def _worker_process(
     pipeline = pipeline_factory()
     stats = {"processed": 0, "valid": 0, "invalid": 0, "errors": 0}
 
-    for raw_line, source_tag, ts_iso in chunk:
+    for raw_line, source_tag, ts_iso, raw_bytes in chunk:
         try:
             ingest_ts = datetime.fromisoformat(ts_iso)
         except Exception:
             ingest_ts = datetime.now(timezone.utc)
 
-        ok = pipeline.process_event(
+        pipeline.process_event(
             raw_line=raw_line,
             source_tag=source_tag,
             ingest_ts=ingest_ts,
+            raw_bytes=raw_bytes or None,
+            tenant_id=tenant_id,
         )
-        if ok:
-            stats["processed"] += 1
 
-    # Get final stats from pipeline internals
-    final = pipeline.run.__func__  # we ran manually above
-    # Collect from validator if accessible
     try:
         stats["valid"] = pipeline.validator.valid_count
         stats["invalid"] = pipeline.validator.invalid_count
         stats["errors"] = pipeline._errors
-        # Close resources
+        stats["processed"] = pipeline._processed
+    except Exception as exc:
+        logger.warning("Worker %d: could not collect final stats: %s", worker_id, exc)
+
+    try:
         pipeline.validator.close()
-        for sink in pipeline.sinks:
+    except Exception as exc:
+        logger.warning("Worker %d: validator.close() failed: %s", worker_id, exc)
+    for sink in pipeline.sinks:
+        try:
             sink.close()
-    except Exception:
-        pass
+        except Exception as exc:
+            logger.warning("Worker %d: sink %s close() failed: %s", worker_id, sink, exc)
 
     logger.debug("Worker %d done: %s", worker_id, stats)
     return stats
@@ -89,7 +102,8 @@ def _worker_process(
 class ParallelPipeline:
     """
     Distributes log ingestion across multiple CPU processes.
-    Automatically chunks the input stream and merges stats.
+    Streams the input in bounded chunks (does not buffer the entire input in
+    memory) and merges per-worker stats as results arrive.
     """
 
     def __init__(
@@ -106,50 +120,52 @@ class ParallelPipeline:
             self.num_workers, self.chunk_size,
         )
 
-    def run(self, reader) -> dict[str, int]:
-        """
-        Read all events from reader, chunk them, distribute across workers,
-        and return merged stats.
-        """
-        ingest_ts_iso = datetime.now(timezone.utc).isoformat()
-
-        # Collect all lines into chunks
-        chunks: list[list[tuple[str, str, str]]] = []
-        current_chunk: list[tuple[str, str, str]] = []
-
+    def _chunks(self, reader, tenant_id: str) -> Iterator[tuple[list[_ChunkItem], int, str]]:
+        """Stream (chunk, worker_id, tenant_id) tuples from the reader without
+        materializing the whole input in memory at once."""
+        chunk: list[_ChunkItem] = []
+        worker_id = 0
         for raw_event in reader.read():
-            current_chunk.append((
+            raw_bytes = getattr(raw_event, 'raw_bytes', None) or b''
+            chunk.append((
                 raw_event.line,
                 raw_event.source_tag,
                 raw_event.ingest_timestamp.isoformat(),
+                raw_bytes,
             ))
-            if len(current_chunk) >= self.chunk_size:
-                chunks.append(current_chunk)
-                current_chunk = []
+            if len(chunk) >= self.chunk_size:
+                yield chunk, worker_id, tenant_id
+                worker_id += 1
+                chunk = []
+        if chunk:
+            yield chunk, worker_id, tenant_id
 
-        if current_chunk:
-            chunks.append(current_chunk)
-
-        if not chunks:
-            return {"processed": 0, "valid": 0, "invalid": 0, "errors": 0}
-
-        logger.info(
-            "ParallelPipeline: %d chunks, %d workers, distributing...",
-            len(chunks), self.num_workers,
-        )
-
-        # Build worker args: (chunk, factory, worker_id)
-        worker_args = [
-            (chunk, self.pipeline_factory, idx)
-            for idx, chunk in enumerate(chunks)
-        ]
-
-        # Use multiprocessing pool
+    def run(self, reader, tenant_id: str = "default") -> dict[str, int]:
+        """
+        Stream events from reader in bounded chunks, distribute across
+        workers as they become available, and return merged stats.
+        """
         merged: dict[str, int] = {"processed": 0, "valid": 0, "invalid": 0, "errors": 0}
+        chunk_iter = self._chunks(reader, tenant_id)
+
+        # Peek to avoid spinning up a pool for an empty input.
+        try:
+            first = next(chunk_iter)
+        except StopIteration:
+            return merged
+
+        def _all_chunks():
+            yield first
+            yield from chunk_iter
+
+        import functools
+        bound_worker = functools.partial(_worker_process, pipeline_factory=self.pipeline_factory)
+
+        logger.info("ParallelPipeline: streaming chunks to %d workers...", self.num_workers)
+
         try:
             with multiprocessing.Pool(processes=self.num_workers) as pool:
-                results = pool.starmap(_worker_process, worker_args)
-                for result in results:
+                for result in pool.imap_unordered(bound_worker, _all_chunks()):
                     for key in merged:
                         merged[key] += result.get(key, 0)
         except KeyboardInterrupt:

@@ -1,98 +1,91 @@
-# Presentation outline (5 slides, ~10 min)
+# Technical presentation (5 slides)
 
 ---
 
 ## Slide 1 — The problem
 
-**Title:** Why log normalization is harder than it looks
+**Title:** Why perimeter log normalization is harder than it looks
 
-- Firewalls, IDS, VPN, proxies all emit different formats: syslog RFC 3164, RFC 5424, CEF, Palo Alto CSV, JSON
-  - They're not just different formats — field names and severity scales are different too
-- Every new vendor means a new ETL pipeline. A 10-vendor SOC is maintaining 10 separate pipelines
-  - One vendor firmware update can silently break a parser with no alert
-- You can't join `src_ip` from one source with `srcaddr` from another
-  - Cross-source correlation, compliance queries, and analytics features all require a common schema first
-- Goal: one pipeline, one schema, keep the original data, easy to add vendors
+- Every vendor format is structurally different: syslog RFC 3164/5424, CEF, LEEF,
+  Windows/generic XML, vendor CSV, cloud-provider JSON (AWS/Azure/GCP) — different
+  field names, different severity scales, different timestamp formats
+- A 10-vendor SOC maintains 10 hand-built parsers; a firmware update on any one
+  device can silently break its parser with no alert
+- `src_ip` in one source is `srcaddr` in another — correlation, compliance
+  queries, and ML features all require a common schema *before* they're possible
+- Goal: one pipeline, one schema, the original bytes always recoverable,
+  new vendors added without touching the core
 
 ---
 
 ## Slide 2 — Architecture
 
-**Title:** How ULPF works
+**Title:** Reader → Detect → Parse → Raw-store → Normalize → Enrich → Validate → Sink
 
-*(show the Mermaid diagram from `docs/ARCHITECTURE.md`)*
+*(show the diagram from `docs/ARCHITECTURE.md`)*
 
-- Each stage has an abstract base class — swap any component without touching the others
-  - FileReader, Kafka reader, syslog UDP listener: same interface, different implementation
-- Format detection is heuristic + per-source override in `sources.yaml`. No parsing at detect time
-  - Priority chain: Cisco ASA > CEF > RFC 5424 > RFC 3164 > PAN CSV > JSON > LEEF > KV
-- Field mapping lives in YAML files, not Python. You can update a mapping without redeploying
-  - A YAML change is a one-line diff; no Python review needed for field renames
-- The UUID is assigned before anything else. Raw bytes are on disk before normalization starts
-  - If normalization crashes, the raw data is already safe
-
----
-
-## Slide 3 — The schema
-
-**Title:** Universal Event Schema
-
-- 11 top-level groups. 6 required, 5 nullable. Validated by JSON Schema Draft 7 on every event
-  - Required: event_id, ingest_timestamp, raw, source, event, lineage
-- `raw`: `raw_payload` (original string), `raw_format` (enum), `raw_hash` (sha256)
-  - You can always reconstruct what the device sent, and verify it hasn't changed
-- `event`: category (6-value enum), action, outcome (success/failure/unknown), severity_numeric (0-10 float)
-  - `severity_numeric` is the normalized scale; `severity_original` keeps whatever the vendor sent
-- Nullable groups are `null`, not empty dicts
-  - Analytics pipelines and SQL engines handle null cleanly; empty dicts need special-casing
-- `lineage`: parser_name, parser_version, normalization_ruleset_version
-  - You can tell exactly how any event was produced and reprocess with a fixed parser if needed
-- Failed validation goes to `dead_letter.ndjson` with the original raw line and error list
-  - Nothing is silently dropped
-
-*(show the real normalized JSON for the Cisco ASA event)*
+- Raw bytes are hashed and persisted to the raw store **before** detection or
+  parsing runs — a format nobody recognizes still lands in the forensic store
+  and the dead-letter queue, not just a log line
+- Format detection is a fast heuristic chain with a `sources.yaml` override,
+  falling back to asking every registered parser to self-identify
+- Field mapping lives in per-parser YAML, not Python — adding a vendor is one
+  parser file + one YAML file, zero edits to `core/`
+- Event IDs are deterministic (UUIDv5 over tenant + source + raw hash), so
+  reprocessing the same input never creates duplicate events downstream
 
 ---
 
-## Slide 4 — Adding parsers / running offline
+## Slide 3 — The schema (UES v1.2.0)
 
-**Title:** Extending the pipeline and running without a network
+**Title:** Universal Event Schema — lossless by construction
 
-**Adding a parser:**
-- One Python file (`parsers/my_vendor.py`) implementing `match()` and `extract()`
-- One YAML file (`schemas/mappings/my_vendor.yaml`) mapping extracted fields to UES
-- One import line in `parsers/__init__.py`
-- `BaseParser` handles timestamp parsing, IP validation, int coercion — the new file is mostly field extraction
-  - Shown in the demo: Fortinet parser in about 30 lines, picked up automatically
-
-**Scaling later (not built yet, but the hooks are there):**
-- `ReaderBase` is abstract — swap `FileReader` for a Kafka consumer, `Pipeline` doesn't change
-- `SinkBase` is abstract — swap `NDJSONFileSink` for Elasticsearch, `Pipeline` doesn't change
-- `RawStoreBase` is abstract — swap `FileRawStore` for S3, upstream code doesn't change
-
-**Offline:**
-- No runtime network calls anywhere. Verified with `--log-level debug`
-- All 7 dependencies are pure-Python wheels, installable from a local mirror with `--no-index`
-- Docker stage 2 installs with `--no-index`. `docker-compose.yml` sets `network_mode: none`
-  - The container physically cannot make outbound connections
+- `raw`: original payload, format, and a SHA-256 computed over the authentic
+  bytes — not a lossy text decode of them
+- `source` / `event` / `network` / `identity` / `rule`: the common taxonomy,
+  with OCSF-aligned `class_name`/`class_uid`/`activity_name` on every event
+- `vendor_attributes`: an open bag holding every extracted field that doesn't
+  map to a UES column — nothing gets thrown away because the schema is fixed-width
+- `severity_inferred`: true when severity was defaulted rather than read from
+  the source, so a fabricated value is never indistinguishable from a real one
+- `lineage`: parser name/version + ruleset version — every event traces back
+  to exactly what produced it
+- Anything that fails JSON-Schema validation goes to `dead_letter.ndjson` with
+  the raw payload and the reason — nothing is silently dropped
 
 ---
 
-## Slide 5 — Results and what's next
+## Slide 4 — What actually runs today
 
-**Title:** Where things stand
+**Title:** Demonstrated, not aspirational
 
-**Results:**
-- 51/51 tests passing: 7 unit modules + 8 E2E assertions
-  - E2E checks schema validity, raw-store lookup, hash integrity, and that all 6 parsers fired
-- 28 events processed from 6 formats in one run. 0 dead-letter, 0 errors
-  - 5 events each from syslog/CEF/ASA/JSON, 3 from PAN CSV
-- 82% line coverage across core, parsers, sinks
-  - Uncovered: error-path branches and the Kafka stub (not exercised by E2E)
+- 11 parsers, self-registering via `pkgutil` — zero core edits to add one
+- `ulpf listen` — real UDP/TCP syslog ingestion (not just file/stdin batch)
+- `ulpf ingest --workers N` — streaming multi-process fan-out, chunked so the
+  whole input is never buffered in memory
+- Multi-sink fan-out in one run: `--sink ndjson,parquet,cef-egress,leef-egress`
+  — same normalized event, NDJSON + columnar data lake + legacy SIEM egress
+- Offline IP/threat enrichment and a statistical anomaly engine
+  (Z-score, IQR, burst, rare-category, auth-failure-chain) — pure Python,
+  zero network calls, air-gap safe
+- Dashboard: SQLite-indexed search, SSE live stream, forensic raw/normalized
+  split view — CORS restricted to its own origin, write endpoints gated
+  behind an optional API key
+- 132 automated tests, all green; every claim on this slide has a
+  corresponding test or was independently reproduced against the CLI
 
-**What's not built yet:**
-- Real Kafka sink — `KafkaStubSink` already implements `SinkBase`, just needs the producer call
-- LEEF parser — format detector already recognizes `LEEF:`, the schema has the enum value
-- Geo-IP / TI enrichment — `EnrichmentPlugin` ABC is there, needs an offline data file (GeoLite2 etc.)
-- Streaming reader — `pipeline.process_event()` is single-event already, just need a new `ReaderBase`
-- Parquet output sink — UES flat schema maps directly to a Parquet schema, just needs `pyarrow`
+---
+
+## Slide 5 — Honest limitations & roadmap
+
+**Title:** What we'd build next
+
+- Draft-7 JSON Schema validation is per-event and not yet at billions/day
+  throughput — needs sampling or a compiled validator at that scale
+- One raw-store file per event; needs time-partitioned, compacted segments
+  for real Big Data volumes (the Parquet sink is the first step)
+- Taxonomy is OCSF-*aligned*, not full OCSF/ECS conformance — a proper
+  crosswalk is the next schema iteration
+- No built-in multi-tenant access control beyond the `tenant_id` field and
+  the dashboard's API-key gate — a real deployment needs an auth layer in front
+- Next: real Kafka/TLS syslog intake, schema registry, OCSF exporter

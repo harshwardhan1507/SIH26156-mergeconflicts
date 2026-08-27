@@ -108,36 +108,37 @@ class AnomalyDetector:
             threat_intel = enrichment.get("src_ip_context", {}).get("threat_intel", [])
             reasons.append(f"Threat intelligence match for {src_ip}: {threat_intel}")
 
-        # 6. Auth Failure Chain
-        if category == "authentication" and outcome == "failure":
-            fail_count = self._auth_failures.get(src_ip, 0) + 1
-            self._auth_failures[src_ip] = fail_count
-            if fail_count >= 5:
-                score += _SCORE_WEIGHTS["auth_failure_chain"]
-                reasons.append(
-                    f"Authentication failure chain: {fail_count} failures from {src_ip}"
-                )
-        else:
-            # Reset on success
-            if src_ip in self._auth_failures:
+        # 6. Auth Failure Chain — only authentication-category events touch this
+        # counter. Unrelated traffic from the same IP (the common case: a
+        # brute-forcer also generating normal packets) must NOT reset it, or
+        # the chain never accumulates. Only a *successful* auth from that IP
+        # clears it.
+        if category == "authentication":
+            if outcome == "failure":
+                fail_count = self._auth_failures.get(src_ip, 0) + 1
+                self._auth_failures[src_ip] = fail_count
+                if fail_count >= 5:
+                    score += _SCORE_WEIGHTS["auth_failure_chain"]
+                    reasons.append(
+                        f"Authentication failure chain: {fail_count} failures from {src_ip}"
+                    )
+            elif outcome == "success" and src_ip in self._auth_failures:
                 del self._auth_failures[src_ip]
 
         # Clamp score to [0.0, 1.0]
         score = min(1.0, round(score, 3))
 
-        # Annotate event
+        # Annotate event (pure annotation — never mutates original event block)
         if score >= _SCORE_THRESHOLD:
+            orig_sev = float(ev.get("severity_numeric") or 5.0)
+            calculated_risk = round(min(10.0, orig_sev * (1.0 + score)), 1)
             analytics_block = {
                 "anomaly_score": score,
                 "anomaly_reasons": reasons,
                 "is_anomalous": score >= 0.5,
+                "risk_score": calculated_risk,
             }
             event["analytics"] = analytics_block
-
-            # Bump severity on high-confidence anomaly
-            if score >= 0.7:
-                ev["severity_numeric"] = max(float(ev.get("severity_numeric", 5)), 9.0)
-                event["event"] = ev
 
             logger.debug(
                 "Anomaly detected: event_id=%s score=%.3f reasons=%s",

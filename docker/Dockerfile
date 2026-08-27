@@ -20,7 +20,7 @@ FROM python:3.11-slim AS runtime
 
 LABEL org.opencontainers.image.title="Universal Log Pre-processing Framework"
 LABEL org.opencontainers.image.description="Vendor-agnostic perimeter log normalization pipeline"
-LABEL org.opencontainers.image.version="0.1.0"
+LABEL org.opencontainers.image.version="1.2.0"
 
 # Create non-root user
 RUN useradd -r -s /bin/false -m -d /app ulpf

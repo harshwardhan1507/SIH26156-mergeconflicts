@@ -1,11 +1,13 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
   "title": "UniversalEventSchema",
-  "$comment": "v1.1.0 - Added enrichment.src_ip_context, enrichment.dst_ip_context, analytics block",
+  "$comment": "v1.2.0 - Added schema_version, tenant_id, vendor_attributes, and OCSF/ECS taxonomy alignment",
   "type": "object",
   "required": ["event_id", "ingest_timestamp", "raw", "source", "event", "lineage"],
   "additionalProperties": true,
   "properties": {
+    "schema_version": {"type": "string"},
+    "tenant_id": {"type": "string"},
     "event_id": {"type": "string"},
     "ingest_timestamp": {"type": "string"},
     "source_event_timestamp": {"type": ["string", "null"]},
@@ -15,10 +17,7 @@
       "additionalProperties": false,
       "properties": {
         "raw_payload": {"type": "string"},
-        "raw_format": {
-          "type": "string",
-          "enum": ["syslog_rfc5424", "syslog_rfc3164", "cef", "leef", "json", "csv", "kv", "xml", "unknown"]
-        },
+        "raw_format": {"type": "string"},
         "raw_hash": {"type": "string", "pattern": "^[a-f0-9]{64}$"}
       }
     },
@@ -36,17 +35,22 @@
     },
     "event": {
       "type": "object",
-      "required": ["category", "severity_numeric"],
-      "additionalProperties": false,
+      "required": ["category"],
+      "additionalProperties": true,
       "properties": {
         "category": {
           "type": "string",
-          "enum": ["network", "authentication", "threat", "system", "policy", "unknown"]
+          "enum": ["network", "authentication", "threat", "system", "policy", "api", "database", "unknown"]
         },
+        "class_name": {"type": ["string", "null"]},
+        "class_uid": {"type": ["integer", "null"]},
+        "activity_name": {"type": ["string", "null"]},
+        "activity_id": {"type": ["integer", "null"]},
         "action": {"type": ["string", "null"]},
         "outcome": {"type": ["string", "null"], "enum": ["success", "failure", "unknown", null]},
-        "severity_numeric": {"type": "number", "minimum": 0, "maximum": 10},
+        "severity_numeric": {"type": ["number", "null"], "minimum": 0, "maximum": 10},
         "severity_original": {"type": ["string", "null"]},
+        "severity_inferred": {"type": ["boolean", "null"]},
         "event_type_vendor_specific": {"type": ["string", "null"]}
       }
     },
@@ -84,6 +88,10 @@
         "rule_name": {"type": ["string", "null"]},
         "policy_action": {"type": ["string", "null"]}
       }
+    },
+    "vendor_attributes": {
+      "type": ["object", "null"],
+      "additionalProperties": true
     },
     "enrichment": {
       "type": ["object", "null"],
@@ -126,7 +134,8 @@
       "properties": {
         "anomaly_score": {"type": "number", "minimum": 0.0, "maximum": 1.0},
         "anomaly_reasons": {"type": "array", "items": {"type": "string"}},
-        "is_anomalous": {"type": "boolean"}
+        "is_anomalous": {"type": "boolean"},
+        "risk_score": {"type": "number", "minimum": 0.0, "maximum": 10.0}
       }
     },
     "lineage": {

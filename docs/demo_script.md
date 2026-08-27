@@ -1,153 +1,100 @@
 # Demo script (~2 min)
 
 Commands run from the project root. `ulpf` CLI must be installed (`pip install -e .[dev]`).
+Timings are approximate cut points for recording, not hard pauses.
 
 ---
 
-## 0:00-0:15  What we have
+## 0:00–0:15 What we have
 
 ```bash
 ulpf list-parsers
-ls ulpf/sample_logs/
 ```
 
-Show: 6 parsers registered, 6 log files covering each format.
+11 parsers: syslog RFC 3164/5424, CEF, LEEF 1.0/2.0, Windows/generic XML, Cisco ASA,
+Palo Alto CSV, AWS CloudTrail, Azure Monitor, GCP Audit, generic JSON.
 
 ---
 
-## 0:15-0:40  Run the pipeline
+## 0:15–0:35 Ingest everything, in parallel
 
 ```bash
-ulpf --log-level info ingest --input ulpf/sample_logs/ --output output/
+ulpf ingest --input ulpf/sample_logs/ --output output/ --workers 4
 ```
 
-Output:
 ```
-Starting ingestion from 'ulpf/sample_logs/' -> 'output/' [ndjson]
-Done. Processed=28 Valid=28 Invalid=0 Errors=0
-```
-
-```bash
-ls output/
+Starting ingestion from 'ulpf/sample_logs/' -> 'output/' [ndjson] [workers=4]
+Done. Processed=63 Valid=63 Invalid=0 Errors=0
 ```
 
-Three things: `events.ndjson`, `dead_letter.ndjson`, `raw_store/`.
+Point out `--workers 4`: log ingestion is fanned out across processes with a
+streaming chunk generator (no buffering the whole input in RAM), and each
+sink write goes through the same at-least-once path a single-process run does.
 
 ---
 
-## 0:40-1:00  Look at normalized output, then look up the raw line
+## 0:35–1:00 One event, every guarantee at once
 
 ```bash
 python -c "
 import json
-events = [json.loads(l) for l in open('output/events.ndjson')]
-for e in events[:2]:
-    print(json.dumps({
-        'event_id': e['event_id'],
-        'parser': e['lineage']['parser_name'],
-        'category': e['event']['category'],
-        'outcome': e['event']['outcome'],
-        'severity': e['event']['severity_numeric'],
-        'src': e.get('network') and e['network'].get('src_ip'),
-        'dst': e.get('network') and e['network'].get('dst_ip'),
-    }, indent=2))
+e = [json.loads(l) for l in open('output/events.ndjson')
+     if json.loads(l)['lineage']['parser_name'] == 'cef'][0]
+print('event_id       ', e['event_id'])
+print('vendor/product ', e['source']['vendor'], '/', e['source']['product'])
+print('category/action', e['event']['category'], '/', e['event']['action'])
+print('OCSF class     ', e['event']['class_name'], e['event']['class_uid'])
+print('src -> dst     ', e['network']['src_ip'], '->', e['network']['dst_ip'])
+print('vendor_attrs   ', e['vendor_attributes'])   # fields with no UES home — kept, not dropped
+print('raw_hash       ', e['raw']['raw_hash'][:16], '...')
 "
+ulpf lookup --event-id <event-id-from-above>
 ```
 
-Copy an `event_id` from the output, then:
-
-```bash
-ulpf lookup --event-id <event-id>
-```
-
-Prints the exact original log line. Same sha256 is in `raw.raw_hash` of the normalized event.
+Same SHA-256 that's embedded in the normalized event; `lookup` pulls it from
+the raw store, byte-for-byte, computed over the original bytes before any
+text decoding happened — non-UTF-8 input included.
 
 ---
 
-## 1:00-1:10  Dead-letter
+## 1:00–1:20 A log a parser doesn't recognize — nothing is silently dropped
 
 ```bash
-echo '{"broken": true}' | ulpf --log-level info ingest --input - --output output_dl/
+echo 'this is not a known format @@@###' | ulpf ingest --input - --output output_dl/
 cat output_dl/dead_letter.ndjson | python -m json.tool
 ```
 
-Shows the failed event with `event_id`, `raw_payload`, and the schema validation
-errors. It didn't get dropped silently.
+Shows `event_id`, `raw_payload`, `raw_hash`, and the reason. The raw bytes
+were written to the raw store *before* detection ran, so even a completely
+unrecognized log is retrievable by `ulpf lookup` — it just also gets
+quarantined instead of silently vanishing.
 
 ---
 
-## 1:10-1:40  Add a new parser, no core changes
-
-Create `ulpf/parsers/fortinet_syslog.py`:
-
-```python
-from ulpf.parsers.base import BaseParser
-from ulpf.core.registry import register_parser
-
-@register_parser
-class FortinetSyslogParser(BaseParser):
-    name       = 'fortinet_syslog'
-    version    = '1.0.0'
-    log_format = 'syslog_rfc3164'
-
-    def match(self, raw_line):
-        return 'devname=' in raw_line and 'type=' in raw_line
-
-    def extract(self, raw_line):
-        import re
-        kv = dict(re.findall(r'(\w+)=(\S+)', raw_line))
-        ts = self.parse_timestamp(kv.get('date', '') + ' ' + kv.get('time', ''))
-        return {
-            '_raw': raw_line,
-            '_log_format': self.log_format,
-            'timestamp_dt': ts.isoformat() if ts else None,
-            'hostname': kv.get('devname'),
-            'src_ip': self.validate_ip(kv.get('srcip')),
-            'dst_ip': self.validate_ip(kv.get('dstip')),
-            'src_port': self.safe_port(kv.get('srcport')),
-            'dst_port': self.safe_port(kv.get('dstport')),
-            'proto': kv.get('proto'),
-            'severity_ues': 5,
-            'vendor': 'Fortinet',
-            'product': 'FortiGate',
-        }
-```
-
-Create `ulpf/schemas/mappings/fortinet_syslog.yaml` with the field mapping.
-Add `fortinet_syslog` to the imports in `parsers/__init__.py`.
-
-Then:
+## 1:20–1:40 Live syslog ingestion — the actual perimeter-device path
 
 ```bash
-ulpf list-parsers   # fortinet_syslog appears
-
-echo 'date=2024-03-15 time=10:22:45 devname=fw01 type=traffic srcip=10.0.0.5 dstip=203.0.113.1 srcport=44321 dstport=443 proto=tcp' \
-  | ulpf ingest --input - --output output_fortinet/
-
-python -c "import json; e=json.loads(open('output_fortinet/events.ndjson').read()); print(e['lineage']['parser_name'])"
-# fortinet_syslog
+ulpf listen --port 15514 --output output_live/ &
+printf '<134>Mar 15 10:22:45 fw01 CEF:0|Fortinet|FortiGate|6.4|13|Traffic Denied|7|src=10.1.1.9 dst=8.8.8.8\n' \
+  | nc -u -w0 127.0.0.1 15514
+sleep 1
+tail -1 output_live/events.ndjson | python -c "import json,sys; e=json.loads(sys.stdin.read()); print(e['source']['vendor'], e['network']['src_ip'])"
 ```
 
-Nothing in `core/` was touched.
+Real syslog-wrapped CEF over UDP, not a pre-formatted fixture — vendor and
+5-tuple come out correctly on the standard RFC3164-plus-CEF wire format.
 
 ---
 
-## 1:40-2:00  Docker (if available)
+## 1:40–2:00 Plug-and-play — new format, zero core edits
+
+Drop a parser file + YAML mapping into `parsers/` / `schemas/mappings/`
+(shown in the README) and:
 
 ```bash
-docker compose -f docker/docker-compose.yml build
-docker compose -f docker/docker-compose.yml up
+ulpf list-parsers   # new format appears automatically — pkgutil discovery
 ```
 
-Point out `network_mode: none` in the compose file. Output lands in `docker/output/`.
-
-The stage 2 build installs everything with `pip install --no-index`, so once
-the image is built it has no reason to reach the network.
-
-**If Docker is not available:** show that debug logging produces zero HTTP/DNS/socket lines:
-
-```bash
-ulpf --log-level debug ingest --input ulpf/sample_logs/ --output output/ 2>&1 \
-  | grep -Ei "(http|dns|socket|connect)" | wc -l
-# 0
-```
+No edits anywhere in `core/` — no format enum to update, no detector branch
+required for it to round-trip correctly (an unrecognized-but-parseable
+format still carries its own `log_format` end to end).

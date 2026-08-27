@@ -37,16 +37,17 @@ _PRIVATE_RANGES = [
 ]
 
 # Known malicious / threat intelligence CIDR ranges (sampled from Emerging Threats / abuse.ch free data)
-# These are ILLUSTRATIVE examples of known bad actors — real deployment should load from STIX/TAXII feed
+# These are ILLUSTRATIVE examples of known bad actors — real deployment should load from STIX/TAXII feed.
+# Only ranges that are themselves malicious/abuse infrastructure belong here — legitimate
+# CDN/platform infrastructure (even if occasionally abused as a C2 channel by malware) does
+# NOT belong, since flagging it as "threat" mislabels ordinary user traffic to that platform.
 _THREAT_INTEL_RANGES = [
     ("185.220.100.0/22",   "Tor exit nodes (torproject.org bulk list)"),
     ("185.220.101.0/24",   "Tor exit nodes"),
     ("45.142.212.0/24",    "Known scanner / Shodan-crawled malicious"),
     ("194.165.16.0/22",    "Bulletproof hosting (AS49877)"),
-    ("91.108.4.0/22",      "Telegram CDN — commonly abused for C2"),
     ("195.54.160.0/23",    "Known spam/botnet infrastructure"),
     ("5.188.206.0/24",     "Bulletproof VPS provider"),
-    ("31.13.64.0/18",      "Facebook infrastructure (allowed — reference)"),
     ("192.42.116.0/22",    "Tor exit nodes (NL)"),
     ("199.87.154.0/24",    "Known malicious hosting"),
 ]
@@ -195,14 +196,13 @@ class IPEnrichmentPlugin(EnrichmentPlugin):
         if dst_context:
             enrichment["dst_ip_context"] = dst_context
 
-        # Flag events with threat IPs for fast filtering
+        # Flag events with threat IPs for fast filtering. This is pure
+        # annotation — it must NEVER overwrite event.severity_numeric, which
+        # is the source-derived value and part of the traceability contract.
+        # Downstream risk scoring (ulpf.analytics.anomaly) is the place to
+        # combine this flag with severity into a derived score.
         if src_context.get("is_threat") or dst_context.get("is_threat"):
             enrichment["threat_ip_detected"] = True
-            # Bump event severity if threat IP found
-            ev = event.get("event") or {}
-            current_sev = ev.get("severity_numeric", 5)
-            ev["severity_numeric"] = max(current_sev, 8)
-            event["event"] = ev
 
         event["enrichment"] = enrichment
         return event

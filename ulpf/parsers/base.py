@@ -62,6 +62,30 @@ class BaseParser(ABC):
         value = value.strip()
         if not value:
             return None
+
+        # Bare epoch timestamps (CEF `rt`, many JSON APIs) — dateutil cannot
+        # parse these as calendar dates, so detect and convert explicitly.
+        # Magnitude distinguishes seconds vs milliseconds vs microseconds:
+        # ~1.7e9 = seconds, ~1.7e12 = milliseconds, ~1.7e15 = microseconds (as of 2026).
+        if re.fullmatch(r'-?\d+', value):
+            try:
+                num = int(value)
+                abs_num = abs(num)
+                if abs_num >= 1e17:
+                    return None  # implausible, don't guess
+                elif abs_num >= 1e14:
+                    dt = datetime.fromtimestamp(num / 1_000_000, tz=timezone.utc)
+                elif abs_num >= 1e11:
+                    dt = datetime.fromtimestamp(num / 1_000, tz=timezone.utc)
+                elif abs_num >= 1e8:
+                    dt = datetime.fromtimestamp(num, tz=timezone.utc)
+                else:
+                    dt = None
+                if dt is not None:
+                    return dt
+            except (ValueError, OverflowError, OSError):
+                pass  # fall through to dateutil for anything unexpected
+
         try:
             dt = dateutil_parser.parse(value)
             if dt.tzinfo is None:

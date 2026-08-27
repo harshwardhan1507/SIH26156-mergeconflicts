@@ -19,7 +19,7 @@ from typing import Any
 
 import click
 import uvicorn
-from fastapi import Body, FastAPI, HTTPException, Query, Response, Request
+from fastapi import Body, Depends, FastAPI, Header, HTTPException, Query, Response, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
@@ -29,6 +29,37 @@ from ulpf.core.raw_store import FileRawStore
 from ulpf.dashboard.indexer import EventIndexer
 
 logger = logging.getLogger("ulpf.dashboard")
+
+
+def _default_cors_origins(host: str = "127.0.0.1", port: int = 8000) -> list[str]:
+    """
+    CORS origins for the dashboard. Configurable via ULPF_CORS_ORIGINS
+    (comma-separated). Defaults to the dashboard's own bind address — never
+    a wildcard, since wildcard + credentials lets ANY site the analyst's
+    browser visits forge write requests (log injection) against this API.
+    """
+    env_val = os.environ.get("ULPF_CORS_ORIGINS", "").strip()
+    if env_val:
+        return [o.strip() for o in env_val.split(",") if o.strip()]
+    origins = {f"http://127.0.0.1:{port}", f"http://localhost:{port}"}
+    if host not in ("0.0.0.0", "127.0.0.1", "localhost"):
+        origins.add(f"http://{host}:{port}")
+    return sorted(origins)
+
+
+def _require_api_key(x_api_key: str | None = Header(default=None, alias="X-API-Key")) -> None:
+    """
+    FastAPI dependency gating state-changing endpoints (ingest, reindex,
+    live host monitor). Only enforced when ULPF_API_KEY is set in the
+    environment — unset means "trusted local single-user demo", matching
+    how the dashboard has always been run, but any deployment reachable by
+    more than one user or bound to a non-loopback address should set it.
+    """
+    expected = os.environ.get("ULPF_API_KEY")
+    if not expected:
+        return
+    if not x_api_key or x_api_key != expected:
+        raise HTTPException(status_code=401, detail="Missing or invalid X-API-Key header")
 
 # Pydantic models for ingestion endpoints
 class IngestLineRequest(BaseModel):
@@ -87,7 +118,11 @@ async def lifespan(app: FastAPI):
         STATE["live_monitor"].stop()
 
 
-def create_app(output_dir: str | Path | None = None) -> FastAPI:
+def create_app(
+    output_dir: str | Path | None = None,
+    host: str = "127.0.0.1",
+    port: int = 8000,
+) -> FastAPI:
     """Create and configure the FastAPI application instance."""
     resolved_dir = _resolve_output_dir(output_dir)
     STATE["output_dir"] = resolved_dir
@@ -98,17 +133,25 @@ def create_app(output_dir: str | Path | None = None) -> FastAPI:
     app = FastAPI(
         title="ULPF Operations Dashboard",
         description="Real-time perimeter log visualization and forensic inspection",
-        version="0.1.0",
+        version="1.2.0",
         lifespan=lifespan,
     )
 
+    origins = _default_cors_origins(host, port)
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=["*"],
-        allow_credentials=True,
-        allow_methods=["*"],
-        allow_headers=["*"],
+        allow_origins=origins,
+        allow_credentials=False,
+        allow_methods=["GET", "POST"],
+        allow_headers=["Content-Type", "X-API-Key"],
     )
+    if not os.environ.get("ULPF_API_KEY"):
+        logger.warning(
+            "ULPF_API_KEY is not set — ingest/reindex/live-monitor endpoints are "
+            "UNAUTHENTICATED. Fine for a single-user local demo; set ULPF_API_KEY "
+            "before exposing this dashboard beyond localhost or to multiple users."
+        )
+    logger.info("CORS restricted to origins: %s", origins)
 
     static_dir = STATE["static_dir"]
 
@@ -222,7 +265,7 @@ def create_app(output_dir: str | Path | None = None) -> FastAPI:
         headers = {"Content-Disposition": f"attachment; filename={filename}"}
         return StreamingResponse(generator, media_type=media_type, headers=headers)
 
-    @app.post("/api/reindex")
+    @app.post("/api/reindex", dependencies=[Depends(_require_api_key)])
     async def trigger_reindex():
         """Trigger a complete index rebuild from the raw NDJSON file."""
         indexer: EventIndexer = STATE["indexer"]
@@ -269,7 +312,7 @@ def create_app(output_dir: str | Path | None = None) -> FastAPI:
         )
         return pipeline, sinks, validator
 
-    @app.post("/api/ingest/line")
+    @app.post("/api/ingest/line", dependencies=[Depends(_require_api_key)])
     async def ingest_single_line(request: IngestLineRequest):
         """
         Ingest a single raw log line through the full ULPF pipeline.
@@ -297,7 +340,7 @@ def create_app(output_dir: str | Path | None = None) -> FastAPI:
             "errors": pipeline._errors,
         }
 
-    @app.post("/api/ingest/batch")
+    @app.post("/api/ingest/batch", dependencies=[Depends(_require_api_key)])
     async def ingest_batch_lines(request: IngestBatchRequest):
         """
         Ingest an array of raw log lines through the full ULPF pipeline.
@@ -332,7 +375,7 @@ def create_app(output_dir: str | Path | None = None) -> FastAPI:
             "errors": pipeline._errors,
         }
 
-    @app.post("/api/ingest/stream")
+    @app.post("/api/ingest/stream", dependencies=[Depends(_require_api_key)])
     async def ingest_ndjson_stream(request: Request):
         """
         Ingest a chunked NDJSON stream (one raw log line per line in request body).
@@ -480,7 +523,7 @@ def create_app(output_dir: str | Path | None = None) -> FastAPI:
     # ------------------------------------------------------------------
     # Live System Event & Process Monitor Endpoints
     # ------------------------------------------------------------------
-    @app.post("/api/live-monitor/start")
+    @app.post("/api/live-monitor/start", dependencies=[Depends(_require_api_key)])
     async def start_live_monitor(interval_ms: int = 250):
         """Start real-time OS event and process monitoring (sub-second resolution)."""
         from ulpf.collectors.live_monitor import LiveSystemMonitor
@@ -501,7 +544,7 @@ def create_app(output_dir: str | Path | None = None) -> FastAPI:
             **monitor.get_stats(),
         }
 
-    @app.post("/api/live-monitor/stop")
+    @app.post("/api/live-monitor/stop", dependencies=[Depends(_require_api_key)])
     async def stop_live_monitor():
         """Stop the background OS event and process monitor."""
         if "live_monitor" in STATE and STATE["live_monitor"] is not None:
@@ -610,12 +653,6 @@ def main(output_dir: str | None, host: str, port: int, reload: bool, open_browse
         if sample_dir:
             click.echo(f"[*] Initializing sample logs from {sample_dir} into {resolved}...")
             try:
-                from ulpf.cli import ingest as cli_ingest
-                from click.testing import CliRunner
-                # Direct mini-ingest pipeline
-                app_inst = create_app(output_dir=resolved)
-                pipeline, sinks, validator = STATE["indexer"].output_dir, None, None
-                # Run CLI ingest directly
                 from ulpf.core.ingestion import FileReader
                 from ulpf.cli import _build_pipeline, _find_schema_dir, _find_config_dir
                 p, s, v = _build_pipeline(
@@ -648,7 +685,7 @@ def main(output_dir: str | None, host: str, port: int, reload: bool, open_browse
             webbrowser.open(url)
         threading.Thread(target=_launch_browser, daemon=True).start()
 
-    app_instance = create_app(output_dir=resolved)
+    app_instance = create_app(output_dir=resolved, host=host, port=port)
     uvicorn.run(app_instance, host=host, port=port, reload=reload)
 
 

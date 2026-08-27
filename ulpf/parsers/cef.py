@@ -17,8 +17,11 @@ from typing import Any
 from ulpf.parsers.base import BaseParser, ParseError
 from ulpf.core.registry import register_parser
 
-# Strip optional syslog header before CEF:
-_SYSLOG_PREFIX_RE = re.compile(r'^(?:<\d+>\S+\s+\S+\s+\S+\s+)?(?P<cef>CEF:.*)$', re.DOTALL)
+# Strip optional syslog header before CEF: — the header may be RFC3164
+# (<PRI>Mon DD HH:MM:SS host), RFC5424 (<PRI>1 ISO8601 host app procid msgid),
+# or a vendor variant with a different token count, so match it generically
+# as "anything up to the first whitespace-preceded CEF:<digit> marker".
+_SYSLOG_PREFIX_RE = re.compile(r'^(?:<\d+>.*?\s)?(?P<cef>CEF:\d.*)$', re.DOTALL)
 
 # Split CEF header pipe-delimited (first 8 fields)
 _CEF_HEADER_RE = re.compile(
@@ -104,13 +107,15 @@ class CEFParser(BaseParser):
         fields.update(ext)
 
         # Parse known timestamp fields
-        for ts_field in ('rt', 'start', 'end', 'deviceReceiptTime'):
+        for ts_field in ('rt', 'start', 'end', 'deviceReceiptTime', 'deviceCustomDate1', 'deviceCustomDate2'):
             if ts_field in ext:
                 dt = self.parse_timestamp(ext[ts_field])
-                fields[f'{ts_field}_dt'] = dt.isoformat() if dt else None
-                break
+                if dt:
+                    fields[f'{ts_field}_dt'] = dt.isoformat()
+                    fields['timestamp_dt'] = dt.isoformat()
+                    break
         else:
-            fields['rt_dt'] = None
+            fields['timestamp_dt'] = None
 
         # Validate IPs
         for ip_field in ('src', 'dst', 'dvc'):

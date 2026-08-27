@@ -67,9 +67,13 @@ class RollingStats:
         return self._count
 
     def z_score(self, value: float) -> float:
-        """Return standard deviations from mean. 0.0 if std == 0."""
+        """Return standard deviations from mean. Handles zero-variance spike when value differs from constant baseline."""
         s = self.std
-        return abs(value - self._mean) / s if s > 0 else 0.0
+        if s > 0:
+            return abs(value - self._mean) / s
+        if self._count >= 5 and abs(value - self._mean) > 1e-4:
+            return 10.0  # Deviation from constant baseline
+        return 0.0
 
     def iqr_outlier(self, value: float) -> bool:
         """True if value is an IQR outlier (> Q3 + 1.5*IQR or < Q1 - 1.5*IQR)."""
@@ -174,14 +178,24 @@ class BaselineProfiler:
         self._ip_event_times[src_ip].append(time.time())
 
     def is_burst(self, src_ip: str, window_seconds: int = 60, threshold_multiplier: float = 3.0) -> bool:
-        """True if src_ip is generating events at > threshold_multiplier x baseline rate."""
+        """
+        True if src_ip recent event rate (events/sec in recent window) exceeds
+        threshold_multiplier x historical baseline rate (events/sec across observation span).
+        Requires minimum 15 total events and minimum 10 recent events to prevent false positives.
+        """
         times = self._ip_event_times.get(src_ip)
-        if not times or len(times) < 10:
+        if not times or len(times) < 15:
             return False
         now = time.time()
-        recent = sum(1 for t in times if now - t <= window_seconds)
-        baseline_rate = len(times) / window_seconds
-        return recent > baseline_rate * threshold_multiplier
+        span = times[-1] - times[0]
+        if span < 10.0:
+            return False
+        baseline_rate = len(times) / span
+        recent_count = sum(1 for t in times if now - t <= window_seconds)
+        if recent_count < 10:
+            return False
+        recent_rate = recent_count / float(window_seconds)
+        return recent_rate > (baseline_rate * threshold_multiplier)
 
     def is_rare_category(self, category: str, threshold_pct: float = 0.01) -> bool:
         """True if this category accounts for < threshold_pct of total events."""

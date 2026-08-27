@@ -60,6 +60,11 @@ def _parse_leef_attributes(attr_str: str, delimiter: str = '\t') -> dict[str, st
     return result
 
 
+# Strip optional syslog header before LEEF: — header token count varies by
+# vendor/RFC (3164 vs 5424), so match generically up to the marker itself.
+_SYSLOG_PREFIX_RE = re.compile(r'^(?:<\d+>.*?\s)?(?P<leef>LEEF:[0-9.]+\|.*)$', re.DOTALL)
+
+
 @register_parser
 class LEEFParser(BaseParser):
     """IBM QRadar LEEF 1.0 and 2.0 log format parser."""
@@ -69,11 +74,18 @@ class LEEFParser(BaseParser):
 
     def match(self, raw_line: str) -> bool:
         s = raw_line.strip()
-        return s.startswith('LEEF:1.0|') or s.startswith('LEEF:2.0|')
+        m = _SYSLOG_PREFIX_RE.match(s)
+        if not m:
+            return False
+        leef_part = m.group('leef')
+        return leef_part.startswith('LEEF:1.0|') or leef_part.startswith('LEEF:2.0|')
 
     def extract(self, raw_line: str) -> dict[str, Any]:
         stripped = raw_line.strip()
-        m = _LEEF_HEADER_RE.match(stripped)
+        pm = _SYSLOG_PREFIX_RE.match(stripped)
+        leef_str = pm.group('leef') if pm else stripped
+
+        m = _LEEF_HEADER_RE.match(leef_str)
         if not m:
             raise ParseError(f'Not a valid LEEF line: {raw_line[:80]!r}')
 

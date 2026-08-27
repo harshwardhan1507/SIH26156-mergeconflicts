@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "ulpf"
-version = "1.1.0"
+version = "1.2.0"
 description = "Universal Log Pre-processing Framework"
 requires-python = ">=3.11"
 dependencies = [
@@ -23,6 +23,13 @@ ulpf-dashboard = "ulpf.dashboard.app:main"
 
 [project.optional-dependencies]
 dev = ["pytest>=7.4", "pytest-cov>=4.0", "httpx>=0.27.0"]
+# Optional: real columnar Parquet output for ParquetSink (ulpf/sinks/parquet_sink.py).
+# Without it, ParquetSink falls back to a partitioned NDJSON layout automatically —
+# useful for air-gapped sites that haven't vetted pyarrow into their wheelhouse yet.
+parquet = ["pyarrow>=14.0"]
+# Optional: real Kafka streaming for KafkaProducerSink (--sink kafka-real).
+# Without it, ingest --sink kafka-real falls back to a local NDJSON file automatically.
+kafka = ["kafka-python>=2.0"]
 
 [tool.setuptools.packages.find]
 where = ["."]  # ulpf is the top-level package

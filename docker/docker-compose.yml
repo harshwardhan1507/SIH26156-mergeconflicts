@@ -1,5 +1,3 @@
-version: "3.9"
-
 services:
   ulpf:
     build:
@@ -36,6 +34,13 @@ services:
     environment:
       - PYTHONUNBUFFERED=1
       - ULPF_OUTPUT_DIR=/app/output
+      # Uncomment and set to require X-API-Key on ingest/reindex/live-monitor
+      # endpoints — recommended since this service is published to the host
+      # network (network_mode: none only applies to the batch 'ulpf' service).
+      # - ULPF_API_KEY=change-me
+      # If the mapped host port differs from 8000, set this so the browser
+      # origin the dashboard is actually served from is allowed by CORS:
+      # - ULPF_CORS_ORIGINS=http://localhost:8000,http://127.0.0.1:8000
     entrypoint: ["ulpf-dashboard"]
     command:
       - --output-dir

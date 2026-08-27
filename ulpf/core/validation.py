@@ -18,6 +18,20 @@ from jsonschema import Draft7Validator
 logger = logging.getLogger(__name__)
 
 
+class _DeadLetterSink:
+    """
+    Thin writer that lets other pipeline stages (parser/detector failures,
+    sink write failures) route arbitrary records into the same dead-letter
+    file the Validator uses for schema failures — one quarantine queue.
+    """
+
+    def __init__(self, fh):
+        self._fh = fh
+
+    def write(self, record: dict[str, Any]) -> None:
+        self._fh.write(json.dumps(record, default=str) + '\n')
+
+
 class Validator:
     def __init__(self, schema_path: str | Path, dead_letter_path: str | Path):
         self.schema_path = Path(schema_path)
@@ -28,6 +42,9 @@ class Validator:
             schema = json.load(fh)
         self._validator = Draft7Validator(schema)
         self._dl_fh = open(self.dead_letter_path, 'a', encoding='utf-8', buffering=1)
+        # Exposed so Pipeline can route pre-validation failures (parser not
+        # found, extraction error, sink write error) to the same queue.
+        self.dead_letter_sink = _DeadLetterSink(self._dl_fh)
         self._valid_count = 0
         self._invalid_count = 0
 

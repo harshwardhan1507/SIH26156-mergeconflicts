@@ -1,160 +1,87 @@
-# ULPF Architecture Documentation
+# ULPF Architecture (UES v1.2.0)
 
-## Overview
+ULPF converts heterogeneous perimeter-device logs (syslog, CEF, LEEF, XML,
+vendor CSV, cloud-provider JSON) into a single lossless, analytics-ready
+Universal Event Schema, while keeping every original byte independently
+retrievable for forensics and compliance.
 
-Enterprises generate massive volumes of heterogeneous logs across physical network appliances, operating systems, cloud environments, and container platforms. **ULPF (Universal Log Pre-processing Framework)** provides a high-throughput, pluggable, lossless normalization and analytics pipeline that converts multi-format logs into a unified, query-optimized Universal Event Schema (UES v1.1.0).
-
----
-
-## Complete Pipeline Architecture
+## Pipeline
 
 ```mermaid
-flowchart TD
-    subgraph Ingestion ["1. Ingestion Layer"]
-        A1["FileReader (Batch/Directory)"]
-        A2["StdinReader (Pipes)"]
-        A3["REST API (/api/ingest/*)"]
-        A4["ParallelPipeline (multiprocessing Pool)"]
-    end
-
-    subgraph Detection ["2. Detection & Plugin Registry"]
-        B["detector.py: FormatDetector\n(Heuristic Priority Engine)"]
-        C["registry.py: PARSER_REGISTRY\n(@register_parser Dynamic Discovery)"]
-    end
-
-    subgraph Parsing ["3. Parser Plugins (11 Formats)"]
-        D1["syslog_rfc5424.py"]
-        D2["syslog_rfc3164.py"]
-        D3["cef.py"]
-        D4["leef.py (1.0 & 2.0)"]
-        D5["xml_generic.py (Windows EVTX)"]
-        D6["cisco_asa.py"]
-        D7["paloalto_csv.py"]
-        D8["aws_cloudtrail.py"]
-        D9["azure_monitor.py"]
-        D10["gcp_audit.py"]
-        D11["json_passthrough.py"]
-    end
-
-    subgraph Forensic ["4. Forensic Raw Store"]
-        E["raw_store.py: FileRawStore\n(Two-Tier Sharded Disk Store\n+ SHA-256 Checksum)"]
-    end
-
-    subgraph Normalization ["5. Schema Normalization"]
-        F["normalization.py: NormalizationEngine\n(YAML Mapping Declarations)"]
-    end
-
-    subgraph Enrichment ["6. Offline Enrichment"]
-        G1["ip_enrichment.py: IP Classification\n(RFC1918 / Cloud ASN / Threat CIDR)"]
-        G2["composite.py: CompositeEnrichment Chain"]
-    end
-
-    subgraph Analytics ["7. Statistical Anomaly Engine"]
-        H1["baseline.py: BaselineProfiler\n(Welford Rolling Means/Variances)"]
-        H2["anomaly.py: AnomalyDetector\n(Z-Score >3σ, IQR Outliers, Bursts, Rare Categories)"]
-    end
-
-    subgraph Validation ["8. Schema Validation & Sinks"]
-        I{{"validation.py: Validator\n(Draft 7 JSON Schema v1.1.0)"}}
-        J1["sinks/ndjson_file.py: NDJSONFileSink"]
-        J2["sinks/kafka_producer.py: KafkaProducerSink"]
-        K["output/dead_letter.ndjson (Quarantine)"]
-    end
-
-    subgraph Dashboard ["9. Operations & SOC UI"]
-        L["dashboard/indexer.py: EventIndexer (SQLite)"]
-        M["dashboard/app.py: FastAPI REST Backend"]
-        N["dashboard/static: UI (SSE Stream + Traceability Modal)"]
-    end
-
-    Ingestion --> Detection
-    Detection --> Parsing
-    Parsing --> Forensic
-    Forensic --> Normalization
-    Normalization --> Enrichment
-    Enrichment --> Analytics
-    Analytics --> Validation
-    Validation -->|Valid| J1 & J2
-    Validation -->|Invalid| K
-    J1 --> Dashboard
+flowchart LR
+    A["Ingest\nFile / stdin / UDP+TCP syslog\n(ulpf listen)"] --> B["Raw Store\nSHA-256 over authentic bytes,\nwritten BEFORE detection"]
+    B --> C["Detect + Parse\nheuristic chain, per-source\noverride, plugin self-match"]
+    C -->|no match / parse error| DL[("Dead-letter queue\nraw payload + reason")]
+    C --> D["Normalize\nYAML mapping -> UES\n+ vendor_attributes bag"]
+    D --> E["Enrich\noffline IP/threat context\n(pure Python, no network)"]
+    E --> F{"Validate\nJSON Schema Draft-7"}
+    F -->|invalid| DL
+    F -->|valid| G["Sinks (fan-out)\nNDJSON / Kafka / Parquet\nCEF-egress / LEEF-egress"]
+    G --> H["Dashboard\nSQLite index + SSE + raw/\nnormalized split inspector"]
 ```
 
----
+Every stage is isolated per event: one bad line never stops the run and
+never loses data — it is quarantined with its raw payload intact, because
+the raw store write happens *before* detection, not after.
 
-## Core Components
+## Core components
 
-| Module | Purpose |
+| Module | Responsibility |
 |---|---|
-| `ulpf.core.ingestion` | Concrete readers (`FileReader`, `StdinReader`) emitting immutable `RawEvent` objects. |
-| `ulpf.core.detector` | Fast heuristic format classifier ensuring exact parser selection before extraction. |
-| `ulpf.core.registry` | Open-closed parser registry utilizing `@register_parser` and dynamic module discovery. |
-| `ulpf.core.raw_store` | Cryptographic byte-preservation engine (`FileRawStore`) with two-nibble sharded filesystem storage. |
-| `ulpf.core.normalization` | Declarative mapping engine transforming extracted attributes to UES schema using per-parser YAML files. |
-| `ulpf.core.validation` | Strict JSON Schema validation routing valid events to sinks and invalid events with errors to `dead_letter.ndjson`. |
-| `ulpf.core.worker_pool` | Multi-core parallel processor distributing chunked event batches across isolated process workers. |
-| `ulpf.enrichment` | Pure-Python air-gap safe IP context, ASN provider tagging, and embedded threat intelligence detection. |
-| `ulpf.analytics` | Statistical anomaly detection calculating online Z-scores, IQR outlier envelopes, burst rates, and rare category signals. |
-| `ulpf.sinks` | Line-delimited NDJSON sink for data lakes and `KafkaProducerSink` for real-time SIEM streaming with automatic local fallback. |
-| `ulpf.dashboard` | FastAPI server with embedded SQLite indexer, full-text and parameterized search, real-time SSE stream, and cryptographic split inspector. |
+| `core.ingestion` | `FileReader`, `StdinReader` — yield immutable `RawEvent`s with exact bytes preserved |
+| `collectors.syslog_listener` | UDP+TCP syslog receiver feeding the same pipeline (`ulpf listen`) |
+| `core.detector` | Heuristic format classifier; `sources.yaml` override; falls back to asking every registered parser to self-match |
+| `core.registry` | `@register_parser` self-registration via `pkgutil` — adding a format is one file, zero core edits |
+| `core.raw_store` | `FileRawStore` — sharded on-disk store keyed by a UUID-validated `event_id`, SHA-256 over authentic bytes |
+| `core.normalization` | YAML-declarative mapping engine; unmapped fields fall into `vendor_attributes`, not the floor |
+| `core.pipeline` | Orchestrates the stages above; deterministic UUIDv5 `event_id` (tenant + source + raw hash) for idempotent reprocessing |
+| `core.worker_pool` | Streams chunked events across a `multiprocessing.Pool` — bounded memory, picklable module-level worker factory |
+| `enrichment.*` | Offline RFC1918/threat-CIDR/cloud-ASN classification; annotates, never overwrites source-derived fields |
+| `analytics.*` | Z-score, IQR, burst, rare-category, and auth-failure-chain anomaly detection; `analytics.features` emits a 24-dim ML feature vector |
+| `sinks.*` | NDJSON, Kafka (with local fallback), columnar Parquet (with NDJSON fallback), CEF/LEEF egress for legacy SIEM receivers |
+| `dashboard.*` | FastAPI + SQLite index; CORS restricted to its own origin; write endpoints gated behind an optional `X-API-Key` |
 
----
+## Universal Event Schema — key guarantees
 
-## Universal Event Schema (UES v1.1.0) Specification
+- **`raw`**: `raw_payload`, `raw_format`, `raw_hash` — the hash is computed
+  over the same authentic bytes stored in the raw store, so it always
+  verifies, including for non-UTF-8 input.
+- **`vendor_attributes`**: every extracted field that has no UES column
+  lands here instead of being dropped — the schema is fixed-width, the data
+  isn't.
+- **`event`**: `category` (network/authentication/threat/system/policy/
+  api/database/unknown) plus OCSF-aligned `class_name`/`class_uid`/
+  `activity_name`/`activity_id`; `severity_numeric` (0–10) with
+  `severity_inferred` distinguishing a real vendor value from a fallback.
+- **`lineage`**: `parser_name`, `parser_version`, `normalization_ruleset_version`
+  — every event traces back to exactly what produced it.
+- **`tenant_id` / `schema_version`**: carried on every event for multi-tenant
+  routing and forward-compatible schema evolution.
+- Anything failing JSON-Schema validation — or that no parser could even
+  match — is written to `dead_letter.ndjson` with its raw payload and reason.
+  Nothing is dropped silently.
 
-```
-event_id                      [string]   UUIDv4 generated per event
-ingest_timestamp              [string]   ISO-8601 UTC timestamp of pipeline receipt
-source_event_timestamp        [string]   ISO-8601 UTC timestamp parsed from original event (or null)
+## Plug-and-play onboarding
 
-raw                           [object]   Forensic raw envelope
-  raw_payload                 [string]   Untouched original log line
-  raw_format                  [string]   Format identifier (syslog_rfc5424, cef, leef, xml, etc.)
-  raw_hash                    [string]   SHA-256 hexadecimal hash of raw_payload
+Add `parsers/my_vendor.py` (subclass `BaseParser`, implement `match()` /
+`extract()`, decorate with `@register_parser`) and
+`schemas/mappings/my_vendor.yaml`. `pkgutil` discovery picks it up on
+import; `raw.raw_format` and `source.log_format` are taken directly from the
+parser's own `log_format` attribute, so a new format's identity survives
+end-to-end without touching `detector.py`, `pipeline.py`, or the schema.
 
-source                        [object]   Origin device identity
-  vendor                      [string]   Device vendor (Cisco, Palo Alto, AWS, Microsoft, Google, etc.)
-  product                     [string]   Device product (ASA, PAN-OS, S3, Azure Monitor, etc.)
-  device_hostname             [string]   Hostname / region / cloud project
-  source_ip                   [string]   Sending appliance IP (or null)
-  log_format                  [string]   Canonical log format
+## Deployment
 
-event                         [object]   Categorical event taxonomy
-  category                    [string]   network | authentication | threat | system | policy | unknown
-  action                      [string]   Normalized or vendor action
-  outcome                     [string]   success | failure | unknown | null
-  severity_numeric            [number]   Standardized scale (0.0 to 10.0)
-  severity_original           [string]   Raw vendor severity string
-  event_type_vendor_specific  [string]   Mnemonic, signature ID, or API method
+Multi-stage Docker build: wheels are built with network access, the
+runtime image installs `--no-index --find-links` from those wheels only —
+zero outbound calls at runtime, verifiable with `--log-level debug`. The
+batch `ulpf` service in `docker-compose.yml` runs with `network_mode: none`;
+the dashboard service binds to the host but restricts CORS to its own
+origin and accepts an `ULPF_API_KEY` for write-endpoint auth.
 
-network                       [object]   Network 5-tuple and volume telemetry
-  src_ip, dst_ip              [string]   IPv4 / IPv6 addresses
-  src_port, dst_port          [integer]  TCP/UDP port numbers (0-65535)
-  protocol                    [string]   tcp | udp | icmp | etc.
-  bytes_in, bytes_out         [integer]  Byte volume counters
-  direction                   [string]   inbound | outbound | internal | unknown
-  interface                   [string]   Network interface name
+## Known limitations
 
-identity                      [object]   User and domain context
-  username                    [string]   User / principal / account name
-  user_domain                 [string]   Domain / account ID / tenant ID
-
-rule                          [object]   Security policy and rule context
-  rule_id                     [string]   Rule identifier / request ID
-  rule_name                   [string]   Policy name / event name
-  policy_action               [string]   allow | deny | etc.
-
-enrichment                    [object]   Enriched context (Air-gap safe)
-  src_ip_context              [object]   IP classification (private, public, loopback), ASN provider
-  dst_ip_context              [object]   Destination IP classification
-  threat_ip_detected          [boolean]  True if IP matches threat intel CIDR
-
-analytics                     [object]   Statistical Anomaly Detection block
-  anomaly_score               [number]   0.0 to 1.0 composite anomaly probability
-  anomaly_reasons             [array]    Human-readable explanations for SOC triage
-  is_anomalous                [boolean]  True if anomaly_score >= 0.5
-
-lineage                       [object]   Audit and parser provenance
-  parser_name                 [string]   Registered parser plugin identifier
-  parser_version              [string]   Semantic version of parser plugin
-  normalization_ruleset_ver   [string]   Semantic version of YAML ruleset
-```
+Per-event Draft-7 validation and one-file-per-event raw storage are not yet
+tuned for billions-of-events/day throughput; the OCSF alignment is a
+crosswalk, not full conformance. See `docs/presentation_outline.md` (Slide 5)
+for the honest list.
