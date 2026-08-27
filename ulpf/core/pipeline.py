@@ -139,6 +139,11 @@ class Pipeline:
             'json': 'json',
             'csv': 'csv',
             'kv': 'kv',
+            'xml': 'xml',
+            'xml_generic': 'xml',
+            'aws_cloudtrail': 'json',
+            'azure_monitor': 'json',
+            'gcp_audit': 'json',
         }
         raw_format_enum = format_enum_map.get(raw_format, 'unknown')
 

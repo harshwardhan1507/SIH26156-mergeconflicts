@@ -1,0 +1,56 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Wix xmlns="http://schemas.microsoft.com/wix/2006/wi">
+  <Product Id="*"
+           Name="Universal Log Pre-processing Framework (ULPF)"
+           Language="1033"
+           Version="1.1.0.0"
+           Manufacturer="NotUrNio"
+           UpgradeCode="4C5E8D2A-7F1B-4A9E-8B3C-1D5E9F7A2B4C">
+    
+    <Package InstallerVersion="500"
+             Compressed="yes"
+             InstallScope="perMachine"
+             Description="ULPF 1.1.0 Windows Installer"
+             Comments="Universal Log Pre-processing Framework (ULPF) by NotUrNio" />
+
+    <MajorUpgrade DowngradeErrorMessage="A newer version of ULPF is already installed." />
+    <MediaTemplate EmbedCab="yes" />
+
+    <Feature Id="ProductFeature" Title="ULPF Core" Level="1">
+      <ComponentGroupRef Id="ProductComponents" />
+      <ComponentRef Id="ApplicationShortcut" />
+    </Feature>
+
+    <Directory Id="TARGETDIR" Name="SourceDir">
+      <Directory Id="ProgramFiles64Folder">
+        <Directory Id="INSTALLFOLDER" Name="ULPF">
+          <Directory Id="BinFolder" Name="bin" />
+          <Directory Id="SchemasFolder" Name="schemas" />
+          <Directory Id="DocsFolder" Name="docs" />
+        </Directory>
+      </Directory>
+      <Directory Id="ProgramMenuFolder">
+        <Directory Id="ApplicationProgramsFolder" Name="ULPF" />
+      </Directory>
+    </Directory>
+
+    <DirectoryRef Id="ApplicationProgramsFolder">
+      <Component Id="ApplicationShortcut" Guid="8E3B1C5A-9D7F-4E2B-8C1A-5F9E7D3A2B1C">
+        <Shortcut Id="ApplicationStartMenuShortcut"
+                  Name="ULPF Dashboard"
+                  Description="Launch ULPF Operations Dashboard"
+                  Target="[INSTALLFOLDER]bin\ulpf.exe"
+                  Arguments="dashboard --port 8000"
+                  WorkingDirectory="INSTALLFOLDER" />
+        <RemoveFolder Id="CleanUpShortCut" On="uninstall" />
+        <RegistryValue Root="HKCU" Key="Software\NotUrNio\ULPF" Name="installed" Type="integer" Value="1" KeyPath="yes" />
+      </Component>
+    </DirectoryRef>
+
+    <ComponentGroup Id="ProductComponents" Directory="INSTALLFOLDER">
+      <Component Id="EnvPath" Guid="3F7B2E1A-8C9D-4F5E-8B3C-2A1D9E7F4B6C" KeyPath="yes">
+        <Environment Id="PATH" Name="PATH" Value="[INSTALLFOLDER]bin" Permanent="no" Part="last" Action="set" System="yes" />
+      </Component>
+    </ComponentGroup>
+  </Product>
+</Wix>

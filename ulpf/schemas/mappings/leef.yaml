@@ -1,0 +1,31 @@
+ruleset_version: "1.0.0"
+source:
+  vendor: vendor
+  product: product
+  device_hostname: null
+  source_ip: null
+  log_format: leef
+event:
+  category: _category_default:network
+  action: action
+  outcome: _outcome_from_action
+  severity_numeric: severity_numeric
+  severity_original: severity_raw
+  event_type_vendor_specific: event_id
+network:
+  src_ip: src_ip
+  src_port: src_port
+  dst_ip: dst_ip
+  dst_port: dst_port
+  protocol: protocol
+  bytes_in: bytes_in
+  bytes_out: bytes_out
+  direction: null
+  interface: null
+identity:
+  username: username
+  user_domain: domain
+rule:
+  rule_id: event_id
+  rule_name: null
+  policy_action: action

@@ -1,138 +1,160 @@
-# ULPF Architecture
+# ULPF Architecture Documentation
 
-## The problem
+## Overview
 
-Firewalls, IDS/IPS, VPN gateways, and proxies all log in different formats —
-syslog, CEF, vendor CSV, JSON — with different field names and severity scales.
-If you want to query across them you have to write separate ETL for each one,
-and maintain it every time a vendor updates firmware.
-
-ULPF normalizes all of them into one flat schema without throwing away the
-original data. Adding a new vendor means writing one parser file; nothing in
-the core pipeline changes.
+Enterprises generate massive volumes of heterogeneous logs across physical network appliances, operating systems, cloud environments, and container platforms. **ULPF (Universal Log Pre-processing Framework)** provides a high-throughput, pluggable, lossless normalization and analytics pipeline that converts multi-format logs into a unified, query-optimized Universal Event Schema (UES v1.1.0).
 
 ---
 
-## Pipeline
+## Complete Pipeline Architecture
 
 ```mermaid
 flowchart TD
-    A(["Raw log line (file / stdin)"])
-    --> B["ingestion.py\nFileReader / StdinReader\nyields RawEvent"]
-    --> C["detector.py\nFormatDetector\npicks parser by heuristic or sources.yaml"]
-    --> D["registry.py\nPARSER_REGISTRY\nlookup by format_id"]
-    --> E["parsers/\nBaseParser.extract()\nreturns vendor field dict"]
-    --> F["raw_store.py\nFileRawStore.put(event_id, raw)\nreturns sha256"]
-    --> G["normalization.py\nNormalizationEngine\nYAML mapping -> UES dict"]
-    --> H["enrichment/\nEnrichmentPlugin.enrich()\nnoop by default"]
-    --> I{{"validation.py\nDraft7Validator"}}
-    I -->|valid| J["sinks/\nNDJSONFileSink / KafkaStubSink"]
-    I -->|invalid| K(["dead_letter.ndjson"])
+    subgraph Ingestion ["1. Ingestion Layer"]
+        A1["FileReader (Batch/Directory)"]
+        A2["StdinReader (Pipes)"]
+        A3["REST API (/api/ingest/*)"]
+        A4["ParallelPipeline (multiprocessing Pool)"]
+    end
+
+    subgraph Detection ["2. Detection & Plugin Registry"]
+        B["detector.py: FormatDetector\n(Heuristic Priority Engine)"]
+        C["registry.py: PARSER_REGISTRY\n(@register_parser Dynamic Discovery)"]
+    end
+
+    subgraph Parsing ["3. Parser Plugins (11 Formats)"]
+        D1["syslog_rfc5424.py"]
+        D2["syslog_rfc3164.py"]
+        D3["cef.py"]
+        D4["leef.py (1.0 & 2.0)"]
+        D5["xml_generic.py (Windows EVTX)"]
+        D6["cisco_asa.py"]
+        D7["paloalto_csv.py"]
+        D8["aws_cloudtrail.py"]
+        D9["azure_monitor.py"]
+        D10["gcp_audit.py"]
+        D11["json_passthrough.py"]
+    end
+
+    subgraph Forensic ["4. Forensic Raw Store"]
+        E["raw_store.py: FileRawStore\n(Two-Tier Sharded Disk Store\n+ SHA-256 Checksum)"]
+    end
+
+    subgraph Normalization ["5. Schema Normalization"]
+        F["normalization.py: NormalizationEngine\n(YAML Mapping Declarations)"]
+    end
+
+    subgraph Enrichment ["6. Offline Enrichment"]
+        G1["ip_enrichment.py: IP Classification\n(RFC1918 / Cloud ASN / Threat CIDR)"]
+        G2["composite.py: CompositeEnrichment Chain"]
+    end
+
+    subgraph Analytics ["7. Statistical Anomaly Engine"]
+        H1["baseline.py: BaselineProfiler\n(Welford Rolling Means/Variances)"]
+        H2["anomaly.py: AnomalyDetector\n(Z-Score >3σ, IQR Outliers, Bursts, Rare Categories)"]
+    end
+
+    subgraph Validation ["8. Schema Validation & Sinks"]
+        I{{"validation.py: Validator\n(Draft 7 JSON Schema v1.1.0)"}}
+        J1["sinks/ndjson_file.py: NDJSONFileSink"]
+        J2["sinks/kafka_producer.py: KafkaProducerSink"]
+        K["output/dead_letter.ndjson (Quarantine)"]
+    end
+
+    subgraph Dashboard ["9. Operations & SOC UI"]
+        L["dashboard/indexer.py: EventIndexer (SQLite)"]
+        M["dashboard/app.py: FastAPI REST Backend"]
+        N["dashboard/static: UI (SSE Stream + Traceability Modal)"]
+    end
+
+    Ingestion --> Detection
+    Detection --> Parsing
+    Parsing --> Forensic
+    Forensic --> Normalization
+    Normalization --> Enrichment
+    Enrichment --> Analytics
+    Analytics --> Validation
+    Validation -->|Valid| J1 & J2
+    Validation -->|Invalid| K
+    J1 --> Dashboard
 ```
 
 ---
 
-## Modules
+## Core Components
 
-| Module | Key classes | What it does |
-|---|---|---|
-| `core/ingestion.py` | `ReaderBase`, `FileReader`, `StdinReader` | Yields `RawEvent(line, source_tag, ingest_timestamp)`. `ReaderBase` is abstract so a Kafka reader can be added later. |
-| `core/detector.py` | `FormatDetector` | Runs a priority-ordered heuristic chain: Cisco ASA > CEF > RFC 5424 > RFC 3164 > PAN CSV > JSON > LEEF > KV. Reads `config/sources.yaml` for manual overrides per source path. |
-| `core/registry.py` | `PARSER_REGISTRY`, `@register_parser` | Dict of `format_id -> parser class`. Parsers register themselves at import time via the decorator. |
-| `core/normalization.py` | `NormalizationEngine` | Loads `schemas/mappings/*.yaml` on startup and maps extracted fields into UES blocks. Transform hints in the YAML (`_outcome_from_action`, `_direction_from_zones`, etc.) keep the mapping declarative. |
-| `core/validation.py` | `Validator` | Checks every event against `schemas/ues_schema.json` (JSON Schema Draft 7). Invalid events get written to `dead_letter.ndjson` with the error list. Nothing is silently dropped. |
-| `core/raw_store.py` | `RawStoreBase`, `FileRawStore` | Stores raw bytes at `raw_store/<aa>/<bb>/<uuid>.raw`. Returns the sha256 of the payload, which goes into `raw.raw_hash`. |
-| `core/pipeline.py` | `Pipeline` | Runs all stages in order for each event. A failure on one event doesn't stop processing the rest. |
-| `parsers/base.py` | `BaseParser` | Abstract class with `match()` and `extract()` plus helpers: `parse_timestamp`, `validate_ip`, `safe_int`, `safe_port`. |
-| `parsers/*.py` | 6 plugins | Each implements `match` + `extract`, decorated with `@register_parser`. |
-| `sinks/` | `SinkBase`, `NDJSONFileSink`, `KafkaStubSink` | Both use the same `SinkBase` interface. Swapping one for the other doesn't touch `pipeline.py`. |
-| `enrichment/` | `EnrichmentPlugin`, `NoOpEnrichment` | Optional stage after normalization. The default does nothing. Implement `enrich(event) -> event` to add geo or TI data. |
+| Module | Purpose |
+|---|---|
+| `ulpf.core.ingestion` | Concrete readers (`FileReader`, `StdinReader`) emitting immutable `RawEvent` objects. |
+| `ulpf.core.detector` | Fast heuristic format classifier ensuring exact parser selection before extraction. |
+| `ulpf.core.registry` | Open-closed parser registry utilizing `@register_parser` and dynamic module discovery. |
+| `ulpf.core.raw_store` | Cryptographic byte-preservation engine (`FileRawStore`) with two-nibble sharded filesystem storage. |
+| `ulpf.core.normalization` | Declarative mapping engine transforming extracted attributes to UES schema using per-parser YAML files. |
+| `ulpf.core.validation` | Strict JSON Schema validation routing valid events to sinks and invalid events with errors to `dead_letter.ndjson`. |
+| `ulpf.core.worker_pool` | Multi-core parallel processor distributing chunked event batches across isolated process workers. |
+| `ulpf.enrichment` | Pure-Python air-gap safe IP context, ASN provider tagging, and embedded threat intelligence detection. |
+| `ulpf.analytics` | Statistical anomaly detection calculating online Z-scores, IQR outlier envelopes, burst rates, and rare category signals. |
+| `ulpf.sinks` | Line-delimited NDJSON sink for data lakes and `KafkaProducerSink` for real-time SIEM streaming with automatic local fallback. |
+| `ulpf.dashboard` | FastAPI server with embedded SQLite indexer, full-text and parameterized search, real-time SSE stream, and cryptographic split inspector. |
 
 ---
 
-## Universal Event Schema
-
-Required fields are marked R, nullable are N.
+## Universal Event Schema (UES v1.1.0) Specification
 
 ```
-event_id                      R  UUID, generated per event
-ingest_timestamp              R  ISO-8601 UTC, when ULPF received the line
-source_event_timestamp        N  ISO-8601 UTC, from the original log
+event_id                      [string]   UUIDv4 generated per event
+ingest_timestamp              [string]   ISO-8601 UTC timestamp of pipeline receipt
+source_event_timestamp        [string]   ISO-8601 UTC timestamp parsed from original event (or null)
 
-raw                           R
-  raw_payload                    original log line, untouched
-  raw_format                     syslog_rfc5424 | syslog_rfc3164 | cef |
-                                  leef | json | csv | kv | unknown
-  raw_hash                       sha256 of raw_payload bytes
+raw                           [object]   Forensic raw envelope
+  raw_payload                 [string]   Untouched original log line
+  raw_format                  [string]   Format identifier (syslog_rfc5424, cef, leef, xml, etc.)
+  raw_hash                    [string]   SHA-256 hexadecimal hash of raw_payload
 
-source                        R
-  vendor                         e.g. "Cisco", "Palo Alto Networks"
-  product                        e.g. "ASA", "PAN-OS"
-  device_hostname                FQDN or hostname of the sending device
-  source_ip, log_format
+source                        [object]   Origin device identity
+  vendor                      [string]   Device vendor (Cisco, Palo Alto, AWS, Microsoft, Google, etc.)
+  product                     [string]   Device product (ASA, PAN-OS, S3, Azure Monitor, etc.)
+  device_hostname             [string]   Hostname / region / cloud project
+  source_ip                   [string]   Sending appliance IP (or null)
+  log_format                  [string]   Canonical log format
 
-event                         R
-  category                       network | authentication | threat |
-                                  system | policy | unknown
-  action                         allow | deny | permit | alert | null
-  outcome                        success | failure | unknown | null
-  severity_numeric               float 0-10
-  severity_original              whatever the vendor sent, as a string
-  event_type_vendor_specific     mnemonic or signature ID
+event                         [object]   Categorical event taxonomy
+  category                    [string]   network | authentication | threat | system | policy | unknown
+  action                      [string]   Normalized or vendor action
+  outcome                     [string]   success | failure | unknown | null
+  severity_numeric            [number]   Standardized scale (0.0 to 10.0)
+  severity_original           [string]   Raw vendor severity string
+  event_type_vendor_specific  [string]   Mnemonic, signature ID, or API method
 
-network                       N  only present when the log has IP/port info
-  src_ip, src_port, dst_ip, dst_port, protocol
-  bytes_in, bytes_out, direction, interface
+network                       [object]   Network 5-tuple and volume telemetry
+  src_ip, dst_ip              [string]   IPv4 / IPv6 addresses
+  src_port, dst_port          [integer]  TCP/UDP port numbers (0-65535)
+  protocol                    [string]   tcp | udp | icmp | etc.
+  bytes_in, bytes_out         [integer]  Byte volume counters
+  direction                   [string]   inbound | outbound | internal | unknown
+  interface                   [string]   Network interface name
 
-identity                      N  only when the log includes user info
-  username, user_domain
+identity                      [object]   User and domain context
+  username                    [string]   User / principal / account name
+  user_domain                 [string]   Domain / account ID / tenant ID
 
-rule                          N  ACL or policy info when present
-  rule_id, rule_name, policy_action
+rule                          [object]   Security policy and rule context
+  rule_id                     [string]   Rule identifier / request ID
+  rule_name                   [string]   Policy name / event name
+  policy_action               [string]   allow | deny | etc.
 
-enrichment                    N  populated by EnrichmentPlugin
-  geo_src, geo_dst, threat_intel_tags
+enrichment                    [object]   Enriched context (Air-gap safe)
+  src_ip_context              [object]   IP classification (private, public, loopback), ASN provider
+  dst_ip_context              [object]   Destination IP classification
+  threat_ip_detected          [boolean]  True if IP matches threat intel CIDR
 
-lineage                       R
-  parser_name                    registered name, e.g. "cisco_asa"
-  parser_version                 semver
-  normalization_ruleset_version  semver of the YAML mapping file
+analytics                     [object]   Statistical Anomaly Detection block
+  anomaly_score               [number]   0.0 to 1.0 composite anomaly probability
+  anomaly_reasons             [array]    Human-readable explanations for SOC triage
+  is_anomalous                [boolean]  True if anomaly_score >= 0.5
+
+lineage                       [object]   Audit and parser provenance
+  parser_name                 [string]   Registered parser plugin identifier
+  parser_version              [string]   Semantic version of parser plugin
+  normalization_ruleset_ver   [string]   Semantic version of YAML ruleset
 ```
-
-`network`, `identity`, `rule`, and `enrichment` are null when not applicable —
-not empty dicts — so queries and ML pipelines don't have to handle both cases.
-
----
-
-## Traceability
-
-`pipeline.py` generates a UUID before doing anything else. That UUID is:
-
-1. Passed to `FileRawStore.put(event_id, raw_line)` — stores the raw bytes at `raw_store/<aa>/<bb>/<uuid>.raw`
-2. Written into the normalized event as `event_id`
-3. The sha256 of the raw bytes goes into `raw.raw_hash` in that same event
-
-To recover the original log line: `ulpf lookup --event-id <uuid>`.
-To verify integrity: sha256 the stored file and compare to `raw.raw_hash`.
-
----
-
-## How new parsers work
-
-Add `ulpf/parsers/my_vendor.py` with `@register_parser` on the class, and
-`ulpf/schemas/mappings/my_vendor.yaml` with the field mapping. That's it —
-`ulpf/parsers/__init__.py` uses `pkgutil.iter_modules` to auto-discover and
-import every module in the package at startup, so no import needs to be added
-anywhere. `FormatDetector`, `NormalizationEngine`, `Pipeline`, `Validator`,
-and the sinks don't change.
-
----
-
-## Air-gap and containers
-
-Nothing in the default code path makes a network call. All dependencies are
-pure-Python wheels.
-
-The Dockerfile has two stages. Stage 1 downloads all wheels while it still has
-network access. Stage 2 installs from those local wheels using `--no-index`, so
-the runtime image works with `network_mode: none` (set in `docker-compose.yml`).

@@ -1,39 +1,37 @@
 # ULPF — Universal Log Pre-processing Framework
 
-[![tests](https://img.shields.io/badge/tests-53%20passed-10b981?logo=pytest&logoColor=white)](https://github.com/NotUrNio/ULPF)
+[![tests](https://img.shields.io/badge/tests-117%20passed-10b981?logo=pytest&logoColor=white)](https://github.com/NotUrNio/ULPF)
 [![python](https://img.shields.io/badge/python-3.11%2B-blue?logo=python&logoColor=white)](https://www.python.org/)
 [![license](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 [![docker](https://img.shields.io/badge/docker-air--gapped%20ready-0f766e?logo=docker&logoColor=white)](docker/Dockerfile)
 
-Takes raw logs from firewalls, IDS/IPS, VPN gateways, and proxies — any
-vendor, any format — and turns them into one consistent, lossless JSON
-schema for SIEM, data lake, and ML pipelines. Supports syslog (RFC 3164 and
-5424), CEF, Cisco ASA, Palo Alto CSV, and generic JSON out of the box, with
-a plugin system built to add more without touching a line of existing code.
+Takes raw logs from firewalls, IDS/IPS, VPN gateways, cloud audit logs, operating systems, and proxies — any vendor, any format — and turns them into one consistent, lossless JSON schema for SIEM, data lakes, and security analytics. Supports **11 formats out of the box** (Syslog RFC 3164/5424, CEF, LEEF 1.0/2.0, Windows/Generic XML, Cisco ASA, Palo Alto CSV, AWS CloudTrail, Azure Monitor, GCP Audit, generic JSON), with a self-registering plugin system built to add more without touching a line of existing code.
 
-Every raw event is kept, untouched, on disk and linked back to its
-normalized form by UUID — so nothing is ever lost for forensic or compliance
-review. No external API calls, no telemetry, fully deployable air-gapped.
+Every raw event is kept, untouched, on disk and linked back to its normalized form by UUID — so nothing is ever lost for forensic or compliance review. Features offline IP & threat intelligence enrichment, a statistical anomaly detection engine, multi-process parallel scaling, real Kafka streaming sink, and a high-performance web dashboard.
+
+---
 
 ## Why ULPF
 
-- **Zero information loss** — the exact original log line is always
-  retrievable by the event's UUID, hashed with sha256 for integrity checks.
-- **True plug-and-play parsers** — drop a new parser file into `parsers/`
-  and it self-registers via `pkgutil` discovery. No edits to core pipeline
-  code, no edits to any other file, ever.
-- **One normalized schema** — every source, regardless of vendor or format,
-  lands in the same Universal Event Schema, ready for correlation and ML.
-- **Built-in operations dashboard** — browse events, inspect raw/dead-letter
-  data, and monitor parser health, with independent Color Themes (Light/Dark)
-  and independent View Modes (Default/Professional) for SOC analysts.
-- **Air-gapped by design** — zero network calls anywhere in the default code
-  path, multi-stage Docker build that installs from local wheels only.
-- **53 tests, all green** — parser-level, end-to-end, and dashboard tests.
+- **Zero information loss** — the exact original log line is always retrievable by the event's UUID, hashed with SHA-256 for cryptographic forensic integrity.
+- **11 Out-of-the-box log parsers** — Syslog RFC 5424/3164, CEF (ArcSight), LEEF 1.0/2.0 (IBM QRadar), Windows Event Log / Generic XML, Cisco ASA, Palo Alto Networks CSV, AWS CloudTrail, Azure Monitor, GCP Cloud Audit, and JSON Passthrough.
+- **True plug-and-play parsers** — drop a new parser file into `parsers/` and it self-registers via `pkgutil` dynamic discovery. Zero edits to core pipeline code.
+- **Offline IP & threat enrichment** — pure Python, air-gap safe classification for RFC 1918 private ranges, loopback, link-local, cloud provider ASN recognition (AWS, Azure, GCP, Cloudflare, Akamai, Fastly), and embedded threat intel CIDRs.
+- **Statistical anomaly detection engine** — pure Python Z-score deviation (>3σ), IQR byte-volume outlier detection, frequency burst detection (>3× baseline rate), rare category detection (<1%), and authentication failure chain tracking.
+- **Horizontal multi-process scaling** — `--workers N` worker pool (`multiprocessing.Pool`) for high-throughput enterprise scale.
+- **Production & streaming sinks** — analytics-ready NDJSON File Sink and production `KafkaProducerSink` with automatic local fallback.
+- **REST API ingestion & analytics** — `POST /api/ingest/line`, `POST /api/ingest/batch`, `POST /api/ingest/stream`, and `GET /api/analytics/anomalies`.
+- **Built-in operations dashboard** — FastAPI backend with SQLite indexer, SSE live streaming, dark/light themes, default/professional views, and forensic Traceability Split Inspector.
+- **Air-gapped by design** — zero external runtime calls, no CDN dependencies, local offline wheels install.
+- **117 tests, all green** — unit, parser-level, anomaly engine, worker pool, REST API, and end-to-end integration tests.
+
+---
 
 ## Architecture
 
 ![ULPF architecture diagram](docs/architecture-diagram.svg)
+
+---
 
 ## Screenshots
 
@@ -47,168 +45,165 @@ review. No external API calls, no telemetry, fully deployable air-gapped.
 
 ---
 
+## Supported Log Formats
+
+| Format / Source | Parser Plugin | Supported Features |
+|---|---|---|
+| **Syslog RFC 5424** | `syslog_rfc5424.py` | Priority, facility, severity, ID47 structured data |
+| **Syslog RFC 3164** | `syslog_rfc3164.py` | BSD syslog, automatic year injection, process PID |
+| **CEF (Common Event Format)** | `cef.py` | ArcSight, Fortinet, Snort, CheckPoint, extension key-values |
+| **LEEF 1.0 & 2.0** | `leef.py` | IBM QRadar format, custom delimiters (`^`), standard attributes |
+| **Windows / Generic XML** | `xml_generic.py` | Windows EventLog 4624/4625/etc., generic XML tag flattening |
+| **Cisco ASA** | `cisco_asa.py` | `%ASA-` mnemonic parsing, ACL rule names, 5-tuple extraction |
+| **Palo Alto Networks CSV** | `paloalto_csv.py` | PAN-OS 35+ column traffic log mapping, action normalization |
+| **AWS CloudTrail** | `aws_cloudtrail.py` | S3, EC2, IAM, STS JSON events, error code outcome mapping |
+| **Azure Monitor** | `azure_monitor.py` | Activity logs, resource ID parsing, caller IP & identity claims |
+| **GCP Cloud Audit** | `gcp_audit.py` | `protoPayload` audit logs, method names, authorization status |
+| **Generic JSON** | `json_passthrough.py` | Arbitrary structured JSON logs with automatic field mapping |
+
+---
+
 ## Requirements
 
 - Python 3.11+
 - pip 23+
-- Dependencies: `pyyaml`, `jsonschema`, `click`, `python-dateutil`, `pydantic`
+- Dependencies: `pyyaml`, `jsonschema`, `click`, `python-dateutil`, `pydantic`, `fastapi`, `uvicorn`
+- Optional: `kafka-python` (for live Kafka streaming)
 
 ---
 
 ## Install
 
 ```bash
-git clone <repo-url>
-cd ulpf
+git clone https://github.com/NotUrNio/ULPF.git
+cd ULPF
 pip install -e .[dev]
 ```
 
-Check it works:
+Verify installed parsers:
 
 ```bash
 ulpf list-parsers
 ```
 
-### Offline install (no internet on target machine)
-
-On a machine that has internet:
+### Offline install (air-gapped environment)
 
 ```bash
+# On an internet-connected machine:
 pip download -r requirements.txt -d ./wheelhouse
 pip wheel . --no-deps -w ./wheelhouse
-```
 
-Copy `wheelhouse/` to the target machine, then:
-
-```bash
+# Copy wheelhouse/ to the air-gapped machine, then:
 pip install --no-index --find-links ./wheelhouse -r requirements.txt
 pip install --no-index --find-links ./wheelhouse ulpf
 ```
 
 ---
 
-## Running the pipeline
+## Usage
 
-Against the included sample logs:
+### Ingest Logs
 
 ```bash
+# Ingest all sample logs into NDJSON + Raw Store
 ulpf ingest --input ulpf/sample_logs/ --output output/
-```
 
-```
-Starting ingestion from 'ulpf/sample_logs/' -> 'output/' [ndjson]
-Done. Processed=28 Valid=28 Invalid=0 Errors=0
-```
-
-Single file:
-
-```bash
+# Ingest single file
 ulpf ingest --input ulpf/sample_logs/cisco_asa.log --output output/
-```
 
-From stdin:
-
-```bash
+# Ingest from stdin (pipe)
 cat /var/log/syslog | ulpf ingest --input - --output output/
+
+# Ingest with 4 parallel worker processes
+ulpf ingest --input /var/log/sources/ --output output/ --workers 4
+
+# Ingest directly to Kafka topic (with auto local fallback)
+ulpf ingest --input ulpf/sample_logs/ --output output/ --sink kafka-real
 ```
 
-Kafka stub sink (writes Kafka-envelope records to a local file instead of a broker):
+### Statistical Anomaly Analysis
 
 ```bash
-ulpf ingest --input ulpf/sample_logs/ --output output/ --sink kafka
+# Run statistical anomaly detection over normalized events
+ulpf analyze --input output/events.ndjson --output output/anomalies.ndjson
 ```
 
-Look up the original raw line for any event by its UUID:
+### Forensic Raw Store Lookup
 
 ```bash
+# Retrieve original raw payload and verify SHA-256 hash by event UUID
 ulpf lookup --event-id d0f0b096-9b96-43ff-ac78-e4bce3caa108
 ```
 
----
+### Launch Web Dashboard
 
-## Output
-
-```
-output/
-  events.ndjson         one normalized JSON event per line
-  dead_letter.ndjson    events that failed schema validation, with error details
-  raw_store/
-    <aa>/<bb>/<uuid>.raw  original log line, one file per event
+```bash
+ulpf dashboard --port 8000 --output-dir output/
+# Navigate to http://127.0.0.1:8000
 ```
 
 ---
 
-## CLI
+## REST API Ingestion & Endpoints
 
-```
-ulpf [--log-level debug|info|warning|error] COMMAND
-
-  ingest        read logs, write normalized events
-  lookup        print the original raw line for a given event UUID
-  list-parsers  show registered parsers
-
-ulpf ingest
-  -i, --input   file or directory path, or "-" for stdin
-  -s, --sink    ndjson (default) or kafka
-  -o, --output  output directory (default: output)
-  -c, --config  path to sources.yaml
-
-ulpf lookup
-  -e, --event-id   UUID  [required]
-  --raw-store      path to raw_store dir (default: output/raw_store)
-```
+| Method | Endpoint | Description |
+|---|---|---|
+| `POST` | `/api/ingest/line` | Ingest single raw line: `{"line": "..."}` |
+| `POST` | `/api/ingest/batch` | Ingest array of lines: `{"lines": [...]}` |
+| `POST` | `/api/ingest/stream` | Stream chunked NDJSON body |
+| `GET` | `/api/events` | Paginated, sorted, filtered UES events |
+| `GET` | `/api/events/{event_id}` | Event detail + untouched raw payload from RawStore |
+| `GET` | `/api/stats` | Aggregate metrics (totals, categories, vendors, severities) |
+| `GET` | `/api/parsers` | Parser plugin registry health and event counts |
+| `GET` | `/api/dead-letter` | Quarantine queue with validation failure reasons |
+| `GET` | `/api/analytics/anomalies`| Top anomalous events with scores and reasoning |
+| `GET` | `/api/export` | Stream CSV or NDJSON data dump |
+| `GET` | `/api/stream` | Server-Sent Events (SSE) real-time event feed |
 
 ---
 
-## Adding a new parser
+## Adding a New Parser Plugin
 
-Two files. Nothing in `core/` changes, and nothing else in `parsers/` needs
-editing either — `ulpf/parsers/__init__.py` auto-discovers every module in
-the package via `pkgutil.iter_modules` at import time.
+Creating a new parser requires **zero modifications to core code**:
 
-**1. Create `ulpf/parsers/my_vendor.py`:**
-
+1. **Create `ulpf/parsers/my_device.py`:**
 ```python
 from ulpf.parsers.base import BaseParser
 from ulpf.core.registry import register_parser
 
 @register_parser
-class MyVendorParser(BaseParser):
-    name       = 'my_vendor'       # unique key in the registry
-    version    = '1.0.0'
-    log_format = 'syslog_rfc3164'  # raw_format enum value
+class MyDeviceParser(BaseParser):
+    name = "my_device"
+    version = "1.0.0"
+    log_format = "syslog_rfc3164"
 
     def match(self, raw_line: str) -> bool:
-        return 'MY_VENDOR_TAG' in raw_line
+        return "MY_TAG" in raw_line
 
     def extract(self, raw_line: str) -> dict:
-        # parse what you need, use the helpers below
-        ts = self.parse_timestamp('...')
+        ts = self.parse_timestamp("...")
         return {
-            '_raw': raw_line,
-            '_log_format': self.log_format,
-            'timestamp_dt': ts.isoformat() if ts else None,
-            'hostname': '...',
-            'src_ip': self.validate_ip('...'),
-            'src_port': self.safe_port('...'),
-            'severity_ues': 5,
+            "_raw": raw_line,
+            "_log_format": self.log_format,
+            "timestamp_dt": ts.isoformat() if ts else None,
+            "src_ip": self.validate_ip("..."),
+            "src_port": self.safe_port("..."),
+            "severity_ues": 5,
         }
-        # helpers: parse_timestamp, validate_ip, safe_int, safe_port
 ```
 
-**2. Create `ulpf/schemas/mappings/my_vendor.yaml`:**
-
+2. **Create `ulpf/schemas/mappings/my_device.yaml`:**
 ```yaml
 ruleset_version: "1.0.0"
 source:
-  vendor: null
-  product: null
-  device_hostname: hostname   # key from extract() dict
+  vendor: _literal:MyVendor
+  product: _literal:MyProduct
+  device_hostname: hostname
   source_ip: null
   log_format: syslog_rfc3164
 event:
   category: _category_default:network
-  action: null
+  action: action
   outcome: _outcome_from_action
   severity_numeric: severity_ues
   severity_original: null
@@ -232,32 +227,9 @@ rule:
   policy_action: null
 ```
 
-YAML value rules:
-- plain string = key name from `extract()` output
-- `null` = set to `None`
-- `_category_default:X` = infer category from message text, fall back to X
-- `_outcome_from_action` = map allow/permit -> success, deny/drop -> failure
-- `_direction_from_zones` = use `src_zone`/`dst_zone` to set inbound/outbound/internal
-
-**3. Verify:**
-
+3. **Verify:**
 ```bash
-ulpf list-parsers   # my_vendor should appear
-ulpf ingest --input path/to/logs/ --output output/
-```
-
-**5. Write a test** in `ulpf/tests/test_parser_my_vendor.py`:
-
-```python
-from ulpf.parsers.my_vendor import MyVendorParser
-
-def test_match():
-    assert MyVendorParser().match('... MY_VENDOR_TAG ...')
-
-def test_extract():
-    fields = MyVendorParser().extract('... MY_VENDOR_TAG ...')
-    assert fields['hostname'] == 'expected'
-    assert 0 <= fields['severity_ues'] <= 10
+ulpf list-parsers  # my_device appears automatically
 ```
 
 ---
@@ -265,90 +237,27 @@ def test_extract():
 ## Tests
 
 ```bash
+# Run all 117 unit and integration tests
 pytest ulpf/tests/ -v
 
-# with coverage
-pytest ulpf/tests/ -v --cov=ulpf/core --cov=ulpf/parsers --cov=ulpf/sinks --cov-report=term-missing
-
-# one file
-pytest ulpf/tests/test_parser_cisco_asa.py -v
-
-# end-to-end only
-pytest ulpf/tests/test_e2e.py -v
+# Run with test coverage
+pytest ulpf/tests/ -v --cov=ulpf --cov-report=term-missing
 ```
-
-Currently: 51 passed, 0 failed.
-
-The E2E test runs the full pipeline against `sample_logs/`, checks every event
-against the JSON Schema, verifies raw-store lookup for each UUID, and confirms
-all 6 parsers produced output.
 
 ---
 
-## Docker
+## Docker Deployment
 
 ```bash
-# build
+# Build air-gapped image
 docker compose -f docker/docker-compose.yml build
 
-# run
+# Run pipeline + dashboard
 docker compose -f docker/docker-compose.yml up
 ```
 
-The Dockerfile has two stages. Stage 1 downloads all wheels (including the ulpf
-wheel itself). Stage 2 installs from those wheels with `--no-index`, so the
-runtime container needs no network. `docker-compose.yml` sets `network_mode: none`.
-
-Output goes to `docker/output/` via volume mount.
-
-Manual:
-
-```bash
-docker run --network none -v $(pwd)/output:/app/output ulpf:latest \
-    ingest --input /app/sample_logs --output /app/output
-```
-
 ---
 
-## Layout
+## License
 
-```
-ulpf/
-  pyproject.toml
-  requirements.txt
-  README.md
-  docker/
-    Dockerfile
-    docker-compose.yml
-  ulpf/
-    cli.py
-    config/sources.yaml       format overrides per source path
-    core/
-      ingestion.py            FileReader, StdinReader, ReaderBase
-      detector.py             FormatDetector
-      registry.py             @register_parser, PARSER_REGISTRY
-      normalization.py        NormalizationEngine (reads YAML mappings)
-      validation.py           Validator + dead-letter writer
-      raw_store.py            FileRawStore, RawStoreBase
-      pipeline.py             Pipeline (orchestrates all stages)
-    parsers/
-      base.py                 BaseParser ABC
-      syslog_rfc5424.py
-      syslog_rfc3164.py
-      cef.py
-      cisco_asa.py
-      paloalto_csv.py
-      json_passthrough.py
-    sinks/
-      base.py                 SinkBase ABC
-      ndjson_file.py
-      kafka_stub.py
-    enrichment/
-      base.py                 EnrichmentPlugin ABC
-      noop.py
-    schemas/
-      ues_schema.json         JSON Schema Draft 7
-      mappings/               one .yaml per parser
-    sample_logs/              28 synthetic log lines across 6 formats
-    tests/                    51 tests
-```
+[MIT](LICENSE) © 2026 NotUrNio

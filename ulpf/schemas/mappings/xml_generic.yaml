@@ -1,0 +1,31 @@
+ruleset_version: "1.0.0"
+source:
+  vendor: _literal:Microsoft
+  product: _literal:Windows Event Log
+  device_hostname: hostname
+  source_ip: null
+  log_format: xml
+event:
+  category: category
+  action: _category_default:system
+  outcome: _outcome_from_action
+  severity_numeric: severity_numeric
+  severity_original: null
+  event_type_vendor_specific: windows_event_id
+network:
+  src_ip: src_ip
+  src_port: null
+  dst_ip: null
+  dst_port: null
+  protocol: null
+  bytes_in: null
+  bytes_out: null
+  direction: null
+  interface: null
+identity:
+  username: username
+  user_domain: null
+rule:
+  rule_id: windows_event_id
+  rule_name: event_description
+  policy_action: null

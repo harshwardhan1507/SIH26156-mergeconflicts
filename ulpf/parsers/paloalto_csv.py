@@ -4,7 +4,7 @@ Palo Alto Networks Traffic Log CSV Parser.
 PAN-OS traffic logs exported in CSV format have a fixed column order.
 This parser handles the first ~35 columns that are most analytically useful.
 
-Example (synthetic):
+Example:
   2024-03-15T10:22:45.000+00:00,corp-pa,TRAFFIC,start,2024/03/15 10:22:45,2024/03/15 10:22:50,vsys1,10.1.0.5,198.51.100.20,10.1.0.5,198.51.100.20,allow-internet,username1,,,0,,,TCP,inside,outside,Gi0/1,Gi0/2,allow-internet,2024/03/15 10:22:51,12345,1,443,58432,0,0,0x401a,tcp,allow,1024,2048,3072,10,2024/03/15 10:22:50,5,any,0,2345678,0x0,US,US,0,5,4
 """
 from __future__ import annotations

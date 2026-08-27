@@ -40,7 +40,7 @@ coverage.xml
 *.cover
 *.py,cover
 
-# Antigravity & Scratch
+# IDE and editor data
 .antigravity/
 .system_generated/
 

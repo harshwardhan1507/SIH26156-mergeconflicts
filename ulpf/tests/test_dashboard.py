@@ -199,3 +199,40 @@ def test_api_endpoints(sample_output_dir):
     res = client.post("/api/reindex")
     assert res.status_code == 200
     assert res.json()["indexed_events"] == 2
+
+    # Test POST /api/ingest/line
+    res_line = client.post("/api/ingest/line", json={
+        "line": "LEEF:1.0|Cisco|ASA|9.14|106023|src=10.0.0.99\tspt=5555\tdst=203.0.113.1\tdpt=443\tproto=TCP\tsev=8",
+        "source_tag": "api_test"
+    })
+    assert res_line.status_code == 200
+    assert res_line.json()["processed"] == 1
+    assert res_line.json()["valid"] == 1
+
+    # Test POST /api/ingest/batch
+    res_batch = client.post("/api/ingest/batch", json={
+        "lines": [
+            "LEEF:1.0|Cisco|ASA|9.14|106023|src=10.0.0.50\tspt=1234\tdst=203.0.113.2\tdpt=80\tproto=TCP\tsev=3",
+            "LEEF:1.0|Cisco|ASA|9.14|106023|src=10.0.0.51\tspt=1235\tdst=203.0.113.3\tdpt=80\tproto=TCP\tsev=3"
+        ],
+        "source_tag": "api_batch_test"
+    })
+    assert res_batch.status_code == 200
+    assert res_batch.json()["processed"] == 2
+
+    # Test POST /api/ingest/stream
+    res_stream = client.post(
+        "/api/ingest/stream",
+        content="LEEF:1.0|Cisco|ASA|9.14|106023|src=10.0.0.52\tspt=1236\tdst=203.0.113.4\tdpt=80\tproto=TCP\tsev=3\n",
+        headers={"Content-Type": "application/x-ndjson"}
+    )
+    assert res_stream.status_code == 200
+    assert res_stream.json()["processed"] == 1
+
+    # Test GET /api/analytics/anomalies
+    res_anomalies = client.get("/api/analytics/anomalies?min_score=0.0")
+    assert res_anomalies.status_code == 200
+    data_anomalies = res_anomalies.json()
+    assert "anomalies" in data_anomalies
+    assert "total_analyzed" in data_anomalies
+

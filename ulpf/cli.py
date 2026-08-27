@@ -2,8 +2,10 @@
 ULPF Command Line Interface.
 
 Usage:
-  ulpf ingest --input <path> [--sink ndjson|kafka] [--output <dir>] [--config <path>]
+  ulpf ingest --input <path> [--sink ndjson|kafka|kafka-real] [--output <dir>] [--workers N]
+  ulpf analyze --input output/events.ndjson [--output output/anomalies.ndjson]
   ulpf lookup --event-id <uuid> [--raw-store <dir>]
+  ulpf dashboard [--port 8000] [--output-dir output]
   ulpf list-parsers
 """
 from __future__ import annotations
@@ -25,19 +27,25 @@ from ulpf.core.raw_store import FileRawStore
 from ulpf.core.validation import Validator
 from ulpf.core.registry import list_parser_names
 from ulpf.enrichment.noop import NoOpEnrichment
+from ulpf.enrichment.ip_enrichment import IPEnrichmentPlugin
+from ulpf.enrichment.composite import CompositeEnrichment
 from ulpf.sinks.kafka_stub import KafkaStubSink
 from ulpf.sinks.ndjson_file import NDJSONFileSink
 
 
 def _find_schema_dir() -> Path:
-    """Locate the schemas directory across package, workspace, and container paths."""
-    candidates = [
+    """Locate the schemas directory across package, workspace, PyInstaller, and container paths."""
+    candidates = []
+    if hasattr(sys, '_MEIPASS'):
+        candidates.append(Path(sys._MEIPASS) / 'ulpf' / 'schemas')
+        candidates.append(Path(sys._MEIPASS) / 'schemas')
+    candidates.extend([
         Path(__file__).parent / 'schemas',
         Path.cwd() / 'ulpf' / 'schemas',
         Path.cwd() / 'schemas',
         Path('/app/ulpf/schemas'),
         Path('/app/schemas'),
-    ]
+    ])
     for c in candidates:
         if c.exists() and (c / 'ues_schema.json').exists():
             return c
@@ -45,51 +53,32 @@ def _find_schema_dir() -> Path:
 
 
 def _find_config_dir() -> Path:
-    """Locate the config directory across package, workspace, and container paths."""
-    candidates = [
+    """Locate the config directory across package, workspace, PyInstaller, and container paths."""
+    candidates = []
+    if hasattr(sys, '_MEIPASS'):
+        candidates.append(Path(sys._MEIPASS) / 'ulpf' / 'config')
+        candidates.append(Path(sys._MEIPASS) / 'config')
+    candidates.extend([
         Path(__file__).parent / 'config',
         Path.cwd() / 'ulpf' / 'config',
         Path.cwd() / 'config',
         Path('/app/ulpf/config'),
         Path('/app/config'),
-    ]
+    ])
     for c in candidates:
         if c.exists():
             return c
     return candidates[0]
 
 
-@click.group()
-@click.option('--log-level', default='INFO',
-              type=click.Choice(['DEBUG', 'INFO', 'WARNING', 'ERROR'], case_sensitive=False),
-              help='Logging verbosity.')
-def main(log_level: str) -> None:
-    """Universal Log Pre-processing Framework (ULPF)"""
-    logging.basicConfig(
-        level=getattr(logging, log_level),
-        format='%(asctime)s %(levelname)-8s %(name)s: %(message)s',
-    )
-
-
-@main.command()
-@click.option('--input', '-i', 'input_path', default='-',
-              help='Input file/directory path, or "-" for stdin.')
-@click.option('--sink', '-s', 'sink_type', default='ndjson',
-              type=click.Choice(['ndjson', 'kafka'], case_sensitive=False),
-              help='Output sink type.')
-@click.option('--output', '-o', 'output_dir', default='output',
-              help='Output directory for normalized events and raw store.')
-@click.option('--config', '-c', 'config_path', default=None,
-              help='Path to sources.yaml config file.')
-def ingest(input_path: str, sink_type: str, output_dir: str, config_path: str | None) -> None:
-    """Ingest raw log files/stdin and produce normalized UES events."""
-    output = Path(output_dir)
-    output.mkdir(parents=True, exist_ok=True)
-
-    schema_dir = _find_schema_dir()
-    cfg = Path(config_path) if config_path else _find_config_dir() / 'sources.yaml'
-
-    # Build components
+def _build_pipeline(
+    output: Path,
+    schema_dir: Path,
+    cfg: Path,
+    sink_type: str,
+    enrich: bool = True,
+) -> tuple[Pipeline, list, Validator]:
+    """Build and return a configured Pipeline, sinks list, and Validator."""
     detector = FormatDetector(sources_config_path=cfg if cfg.exists() else None)
     raw_store = FileRawStore(output / 'raw_store')
     norm_engine = NormalizationEngine(schema_dir / 'mappings')
@@ -97,10 +86,21 @@ def ingest(input_path: str, sink_type: str, output_dir: str, config_path: str | 
         schema_path=schema_dir / 'ues_schema.json',
         dead_letter_path=output / 'dead_letter.ndjson',
     )
-    enrichment = NoOpEnrichment()
+
+    if enrich:
+        enrichment = CompositeEnrichment([IPEnrichmentPlugin()])
+    else:
+        enrichment = NoOpEnrichment()
 
     if sink_type == 'ndjson':
         sinks = [NDJSONFileSink(output / 'events.ndjson')]
+    elif sink_type == 'kafka-real':
+        from ulpf.sinks.kafka_producer import KafkaProducerSink
+        sinks = [KafkaProducerSink(
+            topic='ulpf.events',
+            bootstrap_servers='localhost:9092',
+            fallback_path=output / 'kafka_events.ndjson',
+        )]
     else:
         sinks = [KafkaStubSink(output / 'kafka_events.ndjson')]
 
@@ -112,22 +112,103 @@ def ingest(input_path: str, sink_type: str, output_dir: str, config_path: str | 
         sinks=sinks,
         enrichment=enrichment,
     )
+    return pipeline, sinks, validator
 
-    # Build reader
-    if input_path == '-':
-        reader = StdinReader()
+
+@click.group()
+@click.option('--log-level', default='INFO',
+              type=click.Choice(['DEBUG', 'INFO', 'WARNING', 'ERROR'], case_sensitive=False),
+              help='Logging verbosity.')
+def main(log_level: str) -> None:
+    """Universal Log Pre-processing Framework (ULPF) v1.1.0"""
+    logging.basicConfig(
+        level=getattr(logging, log_level),
+        format='%(asctime)s %(levelname)-8s %(name)s: %(message)s',
+    )
+
+
+@main.command()
+@click.option('--input', '-i', 'input_path', default='-',
+              help='Input file/directory path, or "-" for stdin.')
+@click.option('--sink', '-s', 'sink_type', default='ndjson',
+              type=click.Choice(['ndjson', 'kafka', 'kafka-real'], case_sensitive=False),
+              help='Output sink type (kafka-real requires kafka-python installed).')
+@click.option('--output', '-o', 'output_dir', default='output',
+              help='Output directory for normalized events and raw store.')
+@click.option('--config', '-c', 'config_path', default=None,
+              help='Path to sources.yaml config file.')
+@click.option('--workers', '-w', 'workers', default=1, type=int,
+              help='Number of parallel worker processes (>1 enables ParallelPipeline).')
+@click.option('--no-enrich', 'no_enrich', is_flag=True, default=False,
+              help='Disable IP enrichment (faster, for benchmarking).')
+def ingest(
+    input_path: str, sink_type: str, output_dir: str,
+    config_path: str | None, workers: int, no_enrich: bool,
+) -> None:
+    """Ingest raw log files/stdin and produce normalized UES events."""
+    output = Path(output_dir)
+    output.mkdir(parents=True, exist_ok=True)
+
+    schema_dir = _find_schema_dir()
+    cfg = Path(config_path) if config_path else _find_config_dir() / 'sources.yaml'
+
+    click.echo(f'Starting ingestion from {input_path!r} -> {output_dir!r} [{sink_type}]'
+               + (f' [workers={workers}]' if workers > 1 else ''))
+
+    if workers > 1:
+        from ulpf.core.worker_pool import ParallelPipeline
+
+        def factory():
+            p, _, __ = _build_pipeline(output, schema_dir, cfg, sink_type, not no_enrich)
+            return p
+
+        reader = FileReader(input_path) if input_path != '-' else StdinReader()
+        parallel = ParallelPipeline(pipeline_factory=factory, num_workers=workers)
+        stats = parallel.run(reader)
     else:
-        reader = FileReader(input_path)
+        pipeline, sinks, validator = _build_pipeline(
+            output, schema_dir, cfg, sink_type, not no_enrich,
+        )
+        reader = FileReader(input_path) if input_path != '-' else StdinReader()
+        stats = pipeline.run(reader)
+        validator.close()
+        for sink in sinks:
+            sink.close()
 
-    click.echo(f'Starting ingestion from {input_path!r} -> {output_dir!r} [{sink_type}]')
-    stats = pipeline.run(reader)
+    click.echo(
+        f'Done. Processed={stats["processed"]} Valid={stats["valid"]} '
+        f'Invalid={stats["invalid"]} Errors={stats["errors"]}'
+    )
 
-    validator.close()
-    for sink in sinks:
-        sink.close()
 
-    click.echo(f'Done. Processed={stats["processed"]} Valid={stats["valid"]} '
-               f'Invalid={stats["invalid"]} Errors={stats["errors"]}')
+@main.command()
+@click.option('--input', '-i', 'input_path', default='output/events.ndjson',
+              help='Path to NDJSON events file to analyze.')
+@click.option('--output', '-o', 'output_path', default=None,
+              help='Path to write anomalous events NDJSON (optional).')
+@click.option('--output-dir', 'output_dir', default='output',
+              help='Output directory (for baseline persistence).')
+def analyze(input_path: str, output_path: str | None, output_dir: str) -> None:
+    """Run statistical anomaly detection over a normalized events NDJSON file."""
+    from ulpf.analytics.anomaly import AnomalyDetector
+
+    detector = AnomalyDetector(output_dir=output_dir)
+    events_file = Path(input_path)
+
+    if not events_file.exists():
+        click.echo(f'Error: events file not found: {events_file}', err=True)
+        sys.exit(1)
+
+    click.echo(f'Analyzing {events_file} for anomalies...')
+    out_path = Path(output_path) if output_path else None
+    result = detector.analyze_file(ndjson_path=events_file, output_path=out_path)
+
+    click.echo(
+        f'Done. Total={result["total_events"]} Anomalous={result["anomalous_events"]} '
+        f'Rate={result["anomaly_rate_pct"]}%'
+    )
+    if out_path:
+        click.echo(f'Anomalous events written to: {out_path}')
 
 
 @main.command()
@@ -151,9 +232,24 @@ def list_parsers() -> None:
     if not names:
         click.echo('No parsers registered.')
     else:
-        click.echo('Registered parsers:')
+        click.echo(f'Registered parsers ({len(names)}):')
         for name in names:
             click.echo(f'  - {name}')
+
+
+@main.command('dashboard')
+@click.option('--output-dir', '-o', default='output', help='Path to pipeline output directory.')
+@click.option('--port', '-p', default=8000, type=int, help='Port to bind the dashboard server.')
+@click.option('--host', default='127.0.0.1', help='Host interface to bind.')
+def dashboard_cmd(output_dir: str, port: int, host: str) -> None:
+    """Launch the interactive local web operations dashboard."""
+    import uvicorn
+    from ulpf.dashboard.app import create_app
+
+    click.echo(f'Starting ULPF Operations Dashboard at http://{host}:{port}')
+    click.echo(f'Connecting to pipeline output directory: {output_dir}')
+    app = create_app(output_dir)
+    uvicorn.run(app, host=host, port=port, log_level='info')
 
 
 if __name__ == '__main__':

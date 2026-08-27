@@ -1,7 +1,8 @@
 """
 FastAPI Application & REST Backend for ULPF Dashboard.
 
-Serves the read-only dashboard API, static assets, and SSE event stream.
+Serves the read-only dashboard API, static assets, SSE event stream,
+REST ingestion endpoints, and analytics anomaly endpoint.
 Uses the SQLite indexer for fast filtering and FileRawStore for O(1) raw lookups.
 """
 from __future__ import annotations
@@ -18,15 +19,25 @@ from typing import Any
 
 import click
 import uvicorn
-from fastapi import FastAPI, HTTPException, Query, Response
+from fastapi import Body, FastAPI, HTTPException, Query, Response, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
+from pydantic import BaseModel
 
 from ulpf.core.raw_store import FileRawStore
 from ulpf.dashboard.indexer import EventIndexer
 
 logger = logging.getLogger("ulpf.dashboard")
+
+# Pydantic models for ingestion endpoints
+class IngestLineRequest(BaseModel):
+    line: str
+    source_tag: str = "api_ingest"
+
+class IngestBatchRequest(BaseModel):
+    lines: list[str]
+    source_tag: str = "api_ingest"
 
 # Global state initialized on startup
 STATE: dict[str, Any] = {
@@ -213,6 +224,217 @@ def create_app(output_dir: str | Path | None = None) -> FastAPI:
         indexer: EventIndexer = STATE["indexer"]
         count = indexer.rebuild_index()
         return {"status": "ok", "indexed_events": count}
+
+    # ------------------------------------------------------------------
+    # REST Ingestion Endpoints
+    # ------------------------------------------------------------------
+
+    def _get_ingest_pipeline():
+        """Build a fresh mini-pipeline for API ingestion (reuses output dir)."""
+        import ulpf.parsers  # noqa: F401 ensure parsers registered
+        from ulpf.core.detector import FormatDetector
+        from ulpf.core.normalization import NormalizationEngine
+        from ulpf.core.pipeline import Pipeline
+        from ulpf.core.validation import Validator
+        from ulpf.enrichment.ip_enrichment import IPEnrichmentPlugin
+        from ulpf.enrichment.composite import CompositeEnrichment
+        from ulpf.sinks.ndjson_file import NDJSONFileSink
+
+        output_dir: Path = STATE["output_dir"]
+        schema_dir = Path(__file__).parent.parent / "schemas"
+        if not (schema_dir / "ues_schema.json").exists():
+            schema_dir = Path.cwd() / "ulpf" / "schemas"
+
+        detector = FormatDetector()
+        raw_store = FileRawStore(output_dir / "raw_store")
+        norm_engine = NormalizationEngine(schema_dir / "mappings")
+        validator = Validator(
+            schema_path=schema_dir / "ues_schema.json",
+            dead_letter_path=output_dir / "dead_letter.ndjson",
+        )
+        enrichment = CompositeEnrichment([IPEnrichmentPlugin()])
+        sinks = [NDJSONFileSink(output_dir / "events.ndjson")]
+
+        pipeline = Pipeline(
+            detector=detector,
+            raw_store=raw_store,
+            normalization_engine=norm_engine,
+            validator=validator,
+            sinks=sinks,
+            enrichment=enrichment,
+        )
+        return pipeline, sinks, validator
+
+    @app.post("/api/ingest/line")
+    async def ingest_single_line(request: IngestLineRequest):
+        """
+        Ingest a single raw log line through the full ULPF pipeline.
+        Returns processing result with event_id if successful.
+        """
+        pipeline, sinks, validator = _get_ingest_pipeline()
+        ingest_ts = datetime.now(timezone.utc)
+        ok = pipeline.process_event(
+            raw_line=request.line,
+            source_tag=request.source_tag,
+            ingest_ts=ingest_ts,
+        )
+        for sink in sinks:
+            sink.flush()
+        validator.close()
+
+        # Sync new event into indexer
+        indexer: EventIndexer = STATE["indexer"]
+        indexer.sync_from_ndjson()
+
+        return {
+            "processed": 1 if ok else 0,
+            "valid": validator.valid_count,
+            "invalid": validator.invalid_count,
+            "errors": pipeline._errors,
+        }
+
+    @app.post("/api/ingest/batch")
+    async def ingest_batch_lines(request: IngestBatchRequest):
+        """
+        Ingest an array of raw log lines through the full ULPF pipeline.
+        Returns aggregate processing stats.
+        """
+        if not request.lines:
+            return {"processed": 0, "valid": 0, "invalid": 0, "errors": 0}
+
+        pipeline, sinks, validator = _get_ingest_pipeline()
+        ingest_ts = datetime.now(timezone.utc)
+
+        for line in request.lines:
+            if line.strip():
+                pipeline.process_event(
+                    raw_line=line,
+                    source_tag=request.source_tag,
+                    ingest_ts=ingest_ts,
+                )
+
+        for sink in sinks:
+            sink.flush()
+        validator.close()
+
+        # Sync new events into indexer
+        indexer: EventIndexer = STATE["indexer"]
+        indexer.sync_from_ndjson()
+
+        return {
+            "processed": pipeline._processed,
+            "valid": validator.valid_count,
+            "invalid": validator.invalid_count,
+            "errors": pipeline._errors,
+        }
+
+    @app.post("/api/ingest/stream")
+    async def ingest_ndjson_stream(request: Request):
+        """
+        Ingest a chunked NDJSON stream (one raw log line per line in request body).
+        Suitable for large bulk uploads. Returns aggregate stats.
+        """
+        body = await request.body()
+        lines = [ln.decode("utf-8", errors="replace") for ln in body.splitlines() if ln.strip()]
+
+        if not lines:
+            return {"processed": 0, "valid": 0, "invalid": 0, "errors": 0}
+
+        pipeline, sinks, validator = _get_ingest_pipeline()
+        ingest_ts = datetime.now(timezone.utc)
+
+        for line in lines:
+            if line.strip():
+                pipeline.process_event(
+                    raw_line=line,
+                    source_tag="api_stream",
+                    ingest_ts=ingest_ts,
+                )
+
+        for sink in sinks:
+            sink.flush()
+        validator.close()
+
+        indexer: EventIndexer = STATE["indexer"]
+        indexer.sync_from_ndjson()
+
+        return {
+            "processed": pipeline._processed,
+            "valid": validator.valid_count,
+            "invalid": validator.invalid_count,
+            "errors": pipeline._errors,
+            "total_lines": len(lines),
+        }
+
+    # ------------------------------------------------------------------
+    # Analytics Endpoints
+    # ------------------------------------------------------------------
+
+    @app.get("/api/analytics/anomalies")
+    async def get_anomalies(
+        top_n: int = Query(20, ge=1, le=200),
+        min_score: float = Query(0.3, ge=0.0, le=1.0),
+    ):
+        """
+        Run anomaly detection over indexed events and return top anomalous events.
+        Scores are computed fresh on each call using the rolling baseline.
+        """
+        from ulpf.analytics.anomaly import AnomalyDetector
+
+        output_dir: Path = STATE["output_dir"]
+        events_file = output_dir / "events.ndjson"
+
+        if not events_file.exists():
+            return {"anomalies": [], "total_analyzed": 0}
+
+        detector = AnomalyDetector(output_dir=output_dir)
+        anomalies = []
+        total = 0
+
+        # Two-pass: build baseline, then score
+        with open(events_file, "r", encoding="utf-8", errors="replace") as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    event = json.loads(line)
+                    detector.update_baseline(event)
+                    total += 1
+                except Exception:
+                    pass
+
+        with open(events_file, "r", encoding="utf-8", errors="replace") as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    event = json.loads(line)
+                    annotated = detector.analyze(event)
+                    analytics = annotated.get("analytics", {})
+                    score = analytics.get("anomaly_score", 0.0)
+                    if score >= min_score:
+                        anomalies.append({
+                            "event_id": annotated.get("event_id"),
+                            "anomaly_score": score,
+                            "anomaly_reasons": analytics.get("anomaly_reasons", []),
+                            "is_anomalous": analytics.get("is_anomalous", False),
+                            "ingest_timestamp": annotated.get("ingest_timestamp"),
+                            "source": annotated.get("source", {}),
+                            "event": annotated.get("event", {}),
+                            "network": annotated.get("network", {}),
+                        })
+                except Exception:
+                    pass
+
+        # Sort by score desc and return top_n
+        anomalies.sort(key=lambda x: x["anomaly_score"], reverse=True)
+        return {
+            "anomalies": anomalies[:top_n],
+            "total_analyzed": total,
+            "anomalies_found": len(anomalies),
+        }
 
     @app.get("/api/stream")
     async def stream_events():

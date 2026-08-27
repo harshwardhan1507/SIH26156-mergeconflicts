@@ -1,9 +1,10 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
   "title": "UniversalEventSchema",
+  "$comment": "v1.1.0 - Added enrichment.src_ip_context, enrichment.dst_ip_context, analytics block",
   "type": "object",
   "required": ["event_id", "ingest_timestamp", "raw", "source", "event", "lineage"],
-  "additionalProperties": false,
+  "additionalProperties": true,
   "properties": {
     "event_id": {"type": "string"},
     "ingest_timestamp": {"type": "string"},
@@ -16,7 +17,7 @@
         "raw_payload": {"type": "string"},
         "raw_format": {
           "type": "string",
-          "enum": ["syslog_rfc5424", "syslog_rfc3164", "cef", "leef", "json", "csv", "kv", "unknown"]
+          "enum": ["syslog_rfc5424", "syslog_rfc3164", "cef", "leef", "json", "csv", "kv", "xml", "unknown"]
         },
         "raw_hash": {"type": "string", "pattern": "^[a-f0-9]{64}$"}
       }
@@ -90,7 +91,42 @@
       "properties": {
         "geo_src": {"type": ["object", "null"]},
         "geo_dst": {"type": ["object", "null"]},
-        "threat_intel_tags": {"type": ["array", "null"], "items": {"type": "string"}}
+        "threat_intel_tags": {"type": ["array", "null"], "items": {"type": "string"}},
+        "src_ip_context": {
+          "type": ["object", "null"],
+          "additionalProperties": true,
+          "properties": {
+            "ip": {"type": "string"},
+            "ip_type": {"type": "string", "enum": ["private", "public", "loopback", "link_local", "multicast", "invalid"]},
+            "is_internal": {"type": ["boolean", "null"]},
+            "is_public": {"type": ["boolean", "null"]},
+            "is_threat": {"type": ["boolean", "null"]},
+            "threat_intel": {"type": ["array", "null"], "items": {"type": "string"}},
+            "cloud_provider": {"type": ["string", "null"]},
+            "cloud_service": {"type": ["string", "null"]}
+          }
+        },
+        "dst_ip_context": {
+          "type": ["object", "null"],
+          "additionalProperties": true,
+          "properties": {
+            "ip": {"type": "string"},
+            "ip_type": {"type": "string"},
+            "is_internal": {"type": ["boolean", "null"]},
+            "is_public": {"type": ["boolean", "null"]},
+            "is_threat": {"type": ["boolean", "null"]}
+          }
+        },
+        "threat_ip_detected": {"type": ["boolean", "null"]}
+      }
+    },
+    "analytics": {
+      "type": ["object", "null"],
+      "additionalProperties": true,
+      "properties": {
+        "anomaly_score": {"type": "number", "minimum": 0.0, "maximum": 1.0},
+        "anomaly_reasons": {"type": "array", "items": {"type": "string"}},
+        "is_anomalous": {"type": "boolean"}
       }
     },
     "lineage": {

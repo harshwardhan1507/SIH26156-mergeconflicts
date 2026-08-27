@@ -1,0 +1,31 @@
+ruleset_version: "1.0.0"
+source:
+  vendor: vendor
+  product: product
+  device_hostname: aws_region
+  source_ip: src_ip
+  log_format: json
+event:
+  category: category
+  action: action
+  outcome: outcome
+  severity_numeric: severity_numeric
+  severity_original: null
+  event_type_vendor_specific: event_name
+network:
+  src_ip: src_ip
+  src_port: null
+  dst_ip: null
+  dst_port: null
+  protocol: null
+  bytes_in: null
+  bytes_out: null
+  direction: null
+  interface: null
+identity:
+  username: username
+  user_domain: account_id
+rule:
+  rule_id: request_id
+  rule_name: event_name
+  policy_action: action

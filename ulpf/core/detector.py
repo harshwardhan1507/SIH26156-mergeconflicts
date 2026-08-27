@@ -74,15 +74,23 @@ class FormatDetector:
         if _CEF_RE.search(stripped):
             return 'cef'
 
-        # 4. RFC 5424
+        # 4. LEEF (check before syslog since LEEF may have syslog prefix)
+        if _LEEF_RE.match(stripped):
+            return 'leef'
+
+        # 5. RFC 5424
         if _RFC5424_RE.match(stripped):
             return 'syslog_rfc5424'
 
-        # 5. RFC 3164 (BSDsyslog with month name or ISO-date variant)
+        # 6. RFC 3164 (BSDsyslog with month name or ISO-date variant)
         if _RFC3164_RE.match(stripped) or _RFC3164_ALT_RE.match(stripped):
             return 'syslog_rfc3164'
 
-        # 6. PAN CSV — TRAFFIC in col 2, enough columns
+        # 7. XML / Windows Event Log (must be XML tag, not syslog <PRI>)
+        if stripped.startswith('<?xml') or re.match(r'^\s*<[a-zA-Z_]', stripped):
+            return 'xml_generic'
+
+        # 8. PAN CSV — TRAFFIC in col 2, enough columns
         if ',' in stripped and 'TRAFFIC' in stripped:
             try:
                 rows = list(csv.reader(io.StringIO(stripped)))
@@ -91,19 +99,39 @@ class FormatDetector:
             except Exception:
                 pass
 
-        # 7. JSON object
+        # 9. JSON — check specific cloud schemas before generic fallback
         if stripped.startswith('{'):
             try:
-                json.loads(stripped)
+                obj = json.loads(stripped)
+                # AWS CloudTrail
+                if (
+                    'eventVersion' in obj and
+                    'eventSource' in obj and
+                    str(obj.get('eventSource', '')).endswith('.amazonaws.com')
+                ):
+                    return 'aws_cloudtrail'
+                # GCP Audit Log
+                if (
+                    'protoPayload' in obj and
+                    ('logName' in obj or 'insertId' in obj) and
+                    str(obj.get('protoPayload', {}).get('@type', '')).startswith(
+                        'type.googleapis.com/google.cloud.audit'
+                    )
+                ):
+                    return 'gcp_audit'
+                # Azure Monitor
+                if (
+                    'operationName' in obj and
+                    'resourceId' in obj and
+                    ('resultType' in obj or 'category' in obj)
+                ):
+                    return 'azure_monitor'
+                # Generic JSON fallback
                 return 'json_passthrough'
             except json.JSONDecodeError:
                 pass
 
-        # 8. LEEF (recognized, no parser yet)
-        if _LEEF_RE.match(stripped):
-            return 'leef'
-
-        # 9. Key-value
+        # 10. Key-value
         if _KV_RE.search(stripped):
             return 'kv'
 
