@@ -12,7 +12,7 @@ Each detected anomaly:
 - Gets an anomaly_reasons list (human-readable strings)
 - Has severity bumped if score >= 0.7
 
-Pure Python, air-gap safe, no ML libraries required.
+Pure Python, air-gap safe, zero external dependencies required.
 """
 from __future__ import annotations
 

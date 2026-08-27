@@ -81,12 +81,14 @@ def _resolve_direction(extracted: dict[str, Any]) -> str | None:
 
 
 def _get_field(extracted: dict[str, Any], field_spec: Any) -> Any:
-    """Resolve a field_spec (a key name or None) from the extracted dict."""
+    """Resolve a field_spec (a key name, literal, or None) from the extracted dict."""
     if field_spec is None:
         return None
     spec = str(field_spec).strip()
     if spec == 'null':
         return None
+    if spec.startswith('_literal:'):
+        return spec.split(':', 1)[1]
     if spec.startswith('_category_default:'):
         return None  # handled separately
     if spec == '_outcome_from_action':

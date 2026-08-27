@@ -7,20 +7,20 @@ source:
   log_format: xml
 event:
   category: category
-  action: _category_default:system
+  action: action
   outcome: _outcome_from_action
   severity_numeric: severity_numeric
   severity_original: null
   event_type_vendor_specific: windows_event_id
 network:
   src_ip: src_ip
-  src_port: null
-  dst_ip: null
-  dst_port: null
-  protocol: null
+  src_port: src_port
+  dst_ip: dst_ip
+  dst_port: dst_port
+  protocol: protocol
   bytes_in: null
   bytes_out: null
-  direction: null
+  direction: direction
   interface: null
 identity:
   username: username

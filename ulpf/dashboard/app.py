@@ -82,6 +82,9 @@ async def lifespan(app: FastAPI):
     initial_count = STATE["indexer"].sync_from_ndjson()
     logger.info("Initial sync completed: %d records indexed", initial_count)
     yield
+    # Cleanup on server shutdown
+    if "live_monitor" in STATE and STATE["live_monitor"] is not None:
+        STATE["live_monitor"].stop()
 
 
 def create_app(output_dir: str | Path | None = None) -> FastAPI:
@@ -90,6 +93,7 @@ def create_app(output_dir: str | Path | None = None) -> FastAPI:
     STATE["output_dir"] = resolved_dir
     STATE["indexer"] = EventIndexer(output_dir=resolved_dir)
     STATE["raw_store"] = FileRawStore(resolved_dir / "raw_store")
+    STATE["live_monitor"] = None  # Always start with Live OS Monitor OFF by default
 
     app = FastAPI(
         title="ULPF Operations Dashboard",
@@ -461,7 +465,7 @@ def create_app(output_dir: str | Path | None = None) -> FastAPI:
                                     except Exception:
                                         pass
                             last_pos = f.tell()
-                await asyncio.sleep(1.5)
+                await asyncio.sleep(0.1)
 
         return StreamingResponse(
             event_generator(),
@@ -472,6 +476,81 @@ def create_app(output_dir: str | Path | None = None) -> FastAPI:
                 "X-Accel-Buffering": "no",
             },
         )
+
+    # ------------------------------------------------------------------
+    # Live System Event & Process Monitor Endpoints
+    # ------------------------------------------------------------------
+    @app.post("/api/live-monitor/start")
+    async def start_live_monitor(interval_ms: int = 250):
+        """Start real-time OS event and process monitoring (sub-second resolution)."""
+        from ulpf.collectors.live_monitor import LiveSystemMonitor
+
+        global LIVE_MONITOR
+        if "live_monitor" not in STATE or STATE["live_monitor"] is None:
+            STATE["live_monitor"] = LiveSystemMonitor(
+                output_dir=STATE["output_dir"],
+                interval_ms=interval_ms,
+            )
+        monitor: LiveSystemMonitor = STATE["live_monitor"]
+        if not monitor.is_running():
+            monitor.start()
+
+        return {
+            "status": "started",
+            "message": "Live system event and process monitor is active.",
+            **monitor.get_stats(),
+        }
+
+    @app.post("/api/live-monitor/stop")
+    async def stop_live_monitor():
+        """Stop the background OS event and process monitor."""
+        if "live_monitor" in STATE and STATE["live_monitor"] is not None:
+            STATE["live_monitor"].stop()
+            return {
+                "status": "stopped",
+                "message": "Live system monitor stopped.",
+                **STATE["live_monitor"].get_stats(),
+            }
+        return {"status": "stopped", "running": False, "events_captured": 0}
+
+    @app.get("/api/live-monitor/status")
+    async def get_live_monitor_status():
+        """Get current live OS monitor status and capture counts."""
+        if "live_monitor" in STATE and STATE["live_monitor"] is not None:
+            return STATE["live_monitor"].get_stats()
+        return {
+            "running": False,
+            "events_captured": 0,
+            "tracked_processes": 0,
+            "interval_ms": 250,
+            "platform": sys.platform,
+        }
+
+    @app.get("/api/live-monitor/events")
+    async def get_live_monitor_events(limit: int = 100):
+        """Get recent captured live host events from memory buffer."""
+        if "live_monitor" in STATE and STATE["live_monitor"] is not None:
+            return {"events": STATE["live_monitor"].get_recent_events(limit=limit)}
+        return {"events": []}
+
+    @app.get("/api/live-monitor/connections")
+    async def get_live_monitor_connections():
+        """Get currently active process outbound network connections."""
+        if "live_monitor" in STATE and STATE["live_monitor"] is not None:
+            return {"connections": STATE["live_monitor"].get_active_connections()}
+        from ulpf.collectors.live_monitor import LiveSystemMonitor
+        temp_mon = LiveSystemMonitor()
+        return {"connections": temp_mon.get_active_connections()}
+
+    @app.get("/api/live-monitor/processes")
+    async def get_live_monitor_processes(limit: int = 150):
+        """Get snapshot of active running processes."""
+        if "live_monitor" in STATE and STATE["live_monitor"] is not None:
+            return {"processes": STATE["live_monitor"].get_running_processes(limit=limit)}
+        from ulpf.collectors.live_monitor import LiveSystemMonitor
+        temp_mon = LiveSystemMonitor()
+        return {"processes": temp_mon.get_running_processes(limit=limit)}
+
 
     # ------------------------------------------------------------------
     # Frontend Static File Serving

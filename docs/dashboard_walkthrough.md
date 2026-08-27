@@ -6,7 +6,7 @@ The ULPF Web Dashboard provides an air-gapped interface for browsing normalized 
 
 ## 1. Theme 1 — Default Theme (Newcomer / First-Time Analyst View)
 
-Designed for quick triage without cognitive overload:
+Designed for quick, efficient triage:
 
 ```
 +---------------------------------------------------------------------------------------------------+

@@ -229,18 +229,47 @@ def list_parsers() -> None:
             click.echo(f'  - {name}')
 
 
+@main.command('monitor')
+@click.option('--output', '-o', default='output', help='Output directory for captured events.')
+@click.option('--interval-ms', '-i', default=250, type=int, help='Polling interval in milliseconds (default: 250ms).')
+def monitor_cmd(output: str, interval_ms: int) -> None:
+    """Live monitor local OS events, process executions (e.g. VALORANT, Chrome), and system logs."""
+    from ulpf.collectors.live_monitor import LiveSystemMonitor
+    import time
+
+    click.echo("============================================================")
+    click.echo(f"  ULPF Live OS & Process Event Monitor ({interval_ms}ms)")
+    click.echo(f"  Target Output Directory: {Path(output).resolve()}")
+    click.echo("  Capturing process launches, exits, and OS event logs...")
+    click.echo("  Press Ctrl+C to stop.")
+    click.echo("============================================================")
+
+    mon = LiveSystemMonitor(output_dir=output, interval_ms=interval_ms)
+    mon.start()
+    try:
+        last_captured = 0
+        while True:
+            time.sleep(1.0)
+            stats = mon.get_stats()
+            captured = stats.get("events_captured", 0)
+            tracked = stats.get("tracked_processes", 0)
+            diff = captured - last_captured
+            last_captured = captured
+            click.echo(f"[*] Live: {captured} events captured (+{diff}/s) | Tracking {tracked} active processes")
+    except KeyboardInterrupt:
+        click.echo("\nStopping live monitor...")
+        mon.stop()
+        click.echo("Live monitor stopped.")
+
+
 def _find_sample_logs_dir() -> Path | None:
     """Find bundled or repository sample_logs directory."""
-    candidates = []
-    if hasattr(sys, "_MEIPASS"):
-        candidates.append(Path(sys._MEIPASS) / "ulpf" / "sample_logs")
-        candidates.append(Path(sys._MEIPASS) / "sample_logs")
-    candidates.extend([
+    candidates = [
         Path(__file__).parent / "sample_logs",
         Path(__file__).parent.parent / "sample_logs",
         Path.cwd() / "ulpf" / "sample_logs",
         Path.cwd() / "sample_logs",
-    ])
+    ]
     for c in candidates:
         if c.exists() and any(c.glob("*.*")):
             return c

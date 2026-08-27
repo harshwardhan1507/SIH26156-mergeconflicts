@@ -250,8 +250,8 @@ class EventIndexer:
         self.sync_from_ndjson()
 
         allowed_sort_fields = {
-            "ingest_timestamp": "ingest_timestamp",
-            "source_event_timestamp": "source_event_timestamp",
+            "ingest_timestamp": "COALESCE(source_event_timestamp, ingest_timestamp)",
+            "source_event_timestamp": "COALESCE(source_event_timestamp, ingest_timestamp)",
             "severity": "severity_numeric",
             "severity_numeric": "severity_numeric",
             "vendor": "vendor",
@@ -259,7 +259,6 @@ class EventIndexer:
             "action": "action",
             "outcome": "outcome",
             "src_ip": "src_ip",
-            "dst_ip": "dst_ip",
             "parser_name": "parser_name",
         }
         sort_column = allowed_sort_fields.get(sort_by, "ingest_timestamp")
@@ -278,6 +277,8 @@ class EventIndexer:
                     device_hostname LIKE ? OR
                     src_ip LIKE ? OR
                     dst_ip LIKE ? OR
+                    CAST(src_port AS TEXT) LIKE ? OR
+                    CAST(dst_port AS TEXT) LIKE ? OR
                     username LIKE ? OR
                     rule_name LIKE ? OR
                     action LIKE ? OR
@@ -285,7 +286,7 @@ class EventIndexer:
                     parser_name LIKE ?
                 )"""
             )
-            params.extend([search_pattern] * 11)
+            params.extend([search_pattern] * 13)
 
         if vendor:
             where_clauses.append("vendor = ?")

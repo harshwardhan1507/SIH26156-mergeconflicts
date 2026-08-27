@@ -94,6 +94,8 @@
     eventsPanel: document.getElementById("eventsPanel"),
     deadLetterPanel: document.getElementById("deadLetterPanel"),
     parsersPanel: document.getElementById("parsersPanel"),
+    liveHostPanel: document.getElementById("liveHostPanel"),
+    filterSection: document.querySelector(".filter-section"),
 
     // Modals
     inspectorModal: document.getElementById("inspectorModal"),
@@ -145,7 +147,7 @@
     if (el.viewDefaultBtn) el.viewDefaultBtn.classList.toggle("active", !isPro);
     if (el.viewProBtn) el.viewProBtn.classList.toggle("active", isPro);
 
-    if (el.proTabsBar) el.proTabsBar.style.display = isPro ? "flex" : "none";
+    if (el.proTabsBar) el.proTabsBar.style.display = "flex";
     if (el.proFiltersPanel) el.proFiltersPanel.style.display = isPro ? "grid" : "none";
 
     renderTableHeader();
@@ -845,6 +847,203 @@
   }
 
   // --------------------------------------------------------------------------
+  // Live Host & Process Monitor Dedicated Workspace
+  // --------------------------------------------------------------------------
+  let activeHostSubTab = "connections";
+
+  async function fetchHostData() {
+    try {
+      const [statusRes, connsRes, eventsRes, procsRes] = await Promise.all([
+        fetch("/api/live-monitor/status").then((r) => r.json()).catch(() => ({})),
+        fetch("/api/live-monitor/connections").then((r) => r.json()).catch(() => ({ connections: [] })),
+        fetch("/api/live-monitor/events").then((r) => r.json()).catch(() => ({ events: [] })),
+        fetch("/api/live-monitor/processes").then((r) => r.json()).catch(() => ({ processes: [] })),
+      ]);
+
+      // Update Header Stats
+      const statName = document.getElementById("hostStatName");
+      const statUser = document.getElementById("hostStatUser");
+      const statProcs = document.getElementById("hostStatProcs");
+      const statConns = document.getElementById("hostStatConns");
+      const statEvents = document.getElementById("hostStatEvents");
+      const btnToggle = document.getElementById("btnToggleHostMonitor");
+      const btnText = document.getElementById("btnToggleHostText");
+      const tabDot = document.getElementById("tabLiveHostDot");
+
+      if (statName) statName.textContent = statusRes.hostname || "Local Machine";
+      if (statUser) statUser.textContent = `User: ${statusRes.username || "-"}`;
+      if (statProcs) statProcs.textContent = (statusRes.tracked_processes || procsRes.processes?.length || 0).toLocaleString();
+      if (statConns) statConns.textContent = (connsRes.connections?.length || 0).toLocaleString();
+      if (statEvents) statEvents.textContent = (statusRes.events_captured || eventsRes.events?.length || 0).toLocaleString();
+
+      const countConns = document.getElementById("countSubConns");
+      const countEvents = document.getElementById("countSubEvents");
+      const countProcs = document.getElementById("countSubProcs");
+      if (countConns) countConns.textContent = connsRes.connections?.length || 0;
+      if (countEvents) countEvents.textContent = eventsRes.events?.length || 0;
+      if (countProcs) countProcs.textContent = procsRes.processes?.length || 0;
+
+      if (btnToggle && btnText) {
+        if (statusRes.running) {
+          btnToggle.classList.add("active");
+          btnText.textContent = `Capturing Active (${statusRes.interval_ms || 250}ms)`;
+          if (tabDot) tabDot.style.display = "inline-block";
+        } else {
+          btnToggle.classList.remove("active");
+          btnText.textContent = "Start Live Capture";
+          if (tabDot) tabDot.style.display = "none";
+        }
+      }
+
+      // Render Active Connections Table
+      const connsTbody = document.getElementById("hostConnectionsTableBody");
+      if (connsTbody) {
+        const conns = connsRes.connections || [];
+        if (conns.length === 0) {
+          connsTbody.innerHTML = `<tr><td colspan="6" class="host-empty">No active outbound connections. Start Live Capture or open an app to inspect.</td></tr>`;
+        } else {
+          connsTbody.innerHTML = conns
+            .map((c) => {
+              const proc = escapeHtml(c.process_name || "Unknown");
+              const pid = c.pid || "-";
+              const src = `${c.src_ip}:${c.src_port}`;
+              const dst = `${c.dst_ip}:${c.dst_port}`;
+              const proto = (c.proto || "tcp").toUpperCase();
+              return `
+                <tr>
+                  <td><strong style="color: var(--text-primary);">${proc}</strong></td>
+                  <td class="mono-text" style="color: var(--text-muted);">${pid}</td>
+                  <td class="mono-text">${escapeHtml(src)}</td>
+                  <td class="mono-text" style="color: var(--accent); font-weight: 600;">${escapeHtml(dst)}</td>
+                  <td><span class="badge badge-subtle">${proto}</span></td>
+                  <td><span class="badge badge-allow">ACTIVE</span></td>
+                </tr>
+              `;
+            })
+            .join("");
+        }
+      }
+
+      // Render Host Events Table
+      const eventsTbody = document.getElementById("hostEventsTableBody");
+      if (eventsTbody) {
+        const evs = eventsRes.events || [];
+        if (evs.length === 0) {
+          eventsTbody.innerHTML = `<tr><td colspan="5" class="host-empty">No host events captured yet. Click "Start Live Capture" to record process executions.</td></tr>`;
+        } else {
+          eventsTbody.innerHTML = evs
+            .map((ev) => {
+              const ts = formatTimestamp(ev.timestamp);
+              const act = (ev.action || "event").toLowerCase();
+              let badge = `<span class="badge badge-unknown">${escapeHtml(act)}</span>`;
+              if (act.includes("start") || act.includes("launch")) badge = `<span class="badge badge-allow">Started</span>`;
+              else if (act.includes("stop") || act.includes("exit")) badge = `<span class="badge badge-deny">Exited</span>`;
+              else if (act.includes("permit") || act.includes("connect")) badge = `<span class="badge badge-allow">Connected</span>`;
+              else badge = `<span class="badge badge-cat-system">${escapeHtml(act)}</span>`;
+
+              const proc = escapeHtml(ev.process_name || "-");
+              const user = escapeHtml(ev.username || "-");
+              const msg = escapeHtml(ev.message || "-");
+              return `
+                <tr>
+                  <td class="mono-text" style="font-size: 0.75rem; color: var(--text-muted);">${ts}</td>
+                  <td>${badge}</td>
+                  <td><strong>${proc}</strong></td>
+                  <td style="color: var(--text-secondary);">${user}</td>
+                  <td class="mono-text" style="color: var(--text-primary); font-size: 0.78rem;">${msg}</td>
+                </tr>
+              `;
+            })
+            .join("");
+        }
+      }
+
+      // Render Processes Snapshot Table
+      const procsTbody = document.getElementById("hostProcessesTableBody");
+      if (procsTbody) {
+        const procs = procsRes.processes || [];
+        if (procs.length === 0) {
+          procsTbody.innerHTML = `<tr><td colspan="3" class="host-empty">No processes returned.</td></tr>`;
+        } else {
+          procsTbody.innerHTML = procs
+            .map((p) => {
+              const pid = p.pid || "-";
+              const name = escapeHtml(p.name || "-");
+              const path = escapeHtml(p.path || "-");
+              return `
+                <tr>
+                  <td class="mono-text" style="color: var(--text-muted); width: 80px;">${pid}</td>
+                  <td><strong style="color: var(--text-primary);">${name}</strong></td>
+                  <td class="mono-text" style="font-size: 0.75rem; color: var(--text-secondary);">${path}</td>
+                </tr>
+              `;
+            })
+            .join("");
+        }
+      }
+    } catch (err) {
+      console.error("Failed to load live host data:", err);
+    }
+  }
+
+  function setupLiveHostPanel() {
+    const btnToggle = document.getElementById("btnToggleHostMonitor");
+    const btnRefresh = document.getElementById("btnRefreshHostData");
+    const subtabs = document.querySelectorAll(".host-subtab");
+
+    if (btnToggle) {
+      btnToggle.addEventListener("click", async () => {
+        const isRunning = btnToggle.classList.contains("active");
+        const endpoint = isRunning ? "/api/live-monitor/stop" : "/api/live-monitor/start?interval_ms=250";
+        try {
+          btnToggle.style.opacity = "0.5";
+          await fetch(endpoint, { method: "POST" });
+          await fetchHostData();
+        } catch (err) {
+          console.error("Toggle error:", err);
+        } finally {
+          btnToggle.style.opacity = "1";
+        }
+      });
+    }
+
+    if (btnRefresh) {
+      btnRefresh.addEventListener("click", () => fetchHostData());
+    }
+
+    subtabs.forEach((tab) => {
+      tab.addEventListener("click", () => {
+        const target = tab.getAttribute("data-subtab");
+        activeHostSubTab = target;
+        subtabs.forEach((t) => t.classList.remove("active"));
+        tab.classList.add("active");
+
+        const viewConns = document.getElementById("hostSubViewConnections");
+        const viewEvents = document.getElementById("hostSubViewEvents");
+        const viewProcs = document.getElementById("hostSubViewProcesses");
+
+        if (viewConns) viewConns.style.display = target === "connections" ? "block" : "none";
+        if (viewEvents) viewEvents.style.display = target === "events" ? "block" : "none";
+        if (viewProcs) viewProcs.style.display = target === "processes" ? "block" : "none";
+      });
+    });
+
+    const btnBack = document.getElementById("btnBackToEvents");
+    if (btnBack) {
+      btnBack.addEventListener("click", () => {
+        switchTab("events");
+      });
+    }
+
+    // Background poller when liveHost tab is active
+    setInterval(() => {
+      if (state.activeTab === "livehost") {
+        fetchHostData();
+      }
+    }, 1500);
+  }
+
+  // --------------------------------------------------------------------------
   // Keyboard Shortcuts Manager
   // --------------------------------------------------------------------------
   function setupKeyboardShortcuts() {
@@ -970,11 +1169,60 @@
       setTimeout(() => (el.copyJsonBtn.textContent = "Copy JSON"), 1500);
     });
 
+    function switchTab(target) {
+      state.activeTab = target;
+      if (el.proTabsBar) {
+        el.proTabsBar.querySelectorAll(".pro-tab").forEach((t) => {
+          t.classList.toggle("active", t.getAttribute("data-tab") === target);
+        });
+      }
+
+      if (el.eventsPanel) el.eventsPanel.style.display = target === "events" ? "block" : "none";
+      if (el.deadLetterPanel) el.deadLetterPanel.style.display = target === "deadletter" ? "block" : "none";
+      if (el.parsersPanel) el.parsersPanel.style.display = target === "parsers" ? "block" : "none";
+      if (el.liveHostPanel) el.liveHostPanel.style.display = target === "livehost" ? "block" : "none";
+      if (el.filterSection) el.filterSection.style.display = target === "livehost" ? "none" : "block";
+
+      if (el.quickChips) {
+        el.quickChips.querySelectorAll(".chip").forEach((c) => {
+          const f = c.getAttribute("data-filter");
+          if (target === "livehost") {
+            c.classList.toggle("active", f === "live_host");
+          } else {
+            if (f === "live_host") {
+              c.classList.remove("active");
+            } else if (f === "all" && !state.filters.action && state.filters.severityMin === null) {
+              c.classList.add("active");
+            }
+          }
+        });
+      }
+
+      if (target === "deadletter") fetchDeadLetterRecords();
+      if (target === "parsers") fetchParsersHealth();
+      if (target === "livehost") fetchHostData();
+      if (target === "events") {
+        if (virtualScroller) {
+          virtualScroller.render();
+        }
+      }
+    }
+
     // Quick filter chips
     if (el.quickChips) {
       el.quickChips.querySelectorAll(".chip").forEach((chip) => {
         chip.addEventListener("click", () => {
           const filterType = chip.getAttribute("data-filter");
+
+          if (filterType === "live_host") {
+            switchTab("livehost");
+            return;
+          }
+
+          if (state.activeTab !== "events") {
+            switchTab("events");
+          }
+
           el.quickChips.querySelectorAll(".chip").forEach((c) => c.classList.remove("active"));
           chip.classList.add("active");
 
@@ -1000,21 +1248,12 @@
     if (el.outcomeFilter) el.outcomeFilter.addEventListener("change", (e) => { state.filters.outcome = e.target.value; fetchEvents(1); });
     if (el.parserFilter) el.parserFilter.addEventListener("change", (e) => { state.filters.parserName = e.target.value; fetchEvents(1); });
 
-    // Pro Tabs
+    // Navigation Tabs
     if (el.proTabsBar) {
       el.proTabsBar.querySelectorAll(".pro-tab").forEach((tab) => {
         tab.addEventListener("click", () => {
           const target = tab.getAttribute("data-tab");
-          state.activeTab = target;
-          el.proTabsBar.querySelectorAll(".pro-tab").forEach((t) => t.classList.remove("active"));
-          tab.classList.add("active");
-
-          el.eventsPanel.style.display = target === "events" ? "block" : "none";
-          el.deadLetterPanel.style.display = target === "deadletter" ? "block" : "none";
-          el.parsersPanel.style.display = target === "parsers" ? "block" : "none";
-
-          if (target === "deadletter") fetchDeadLetterRecords();
-          if (target === "parsers") fetchParsersHealth();
+          switchTab(target);
         });
       });
     }
@@ -1025,6 +1264,7 @@
 
     setupKeyboardShortcuts();
     setupSSE();
+    setupLiveHostPanel();
     setupDensityToolbar();
     window.addEventListener("resize", debounce(() => virtualScroller.render(), 100));
 

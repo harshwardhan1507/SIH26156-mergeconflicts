@@ -1,6 +1,6 @@
 # ULPF — Universal Log Pre-processing Framework
 
-[![tests](https://img.shields.io/badge/tests-117%20passed-10b981?logo=pytest&logoColor=white)](https://github.com/NotUrNio/ULPF)
+[![tests](https://img.shields.io/badge/tests-124%20passed-10b981?logo=pytest&logoColor=white)](https://github.com/NotUrNio/ULPF)
 [![python](https://img.shields.io/badge/python-3.11%2B-blue?logo=python&logoColor=white)](https://www.python.org/)
 [![license](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 [![docker](https://img.shields.io/badge/docker-air--gapped%20ready-0f766e?logo=docker&logoColor=white)](docker/Dockerfile)
@@ -23,7 +23,7 @@ Every raw event is kept, untouched, on disk and linked back to its normalized fo
 - **REST API ingestion & analytics** — `POST /api/ingest/line`, `POST /api/ingest/batch`, `POST /api/ingest/stream`, and `GET /api/analytics/anomalies`.
 - **Built-in operations dashboard** — FastAPI backend with SQLite indexer, SSE live streaming, dark/light themes, default/professional views, and forensic Traceability Split Inspector.
 - **Air-gapped by design** — zero external runtime calls, no CDN dependencies, local offline wheels install.
-- **117 tests, all green** — unit, parser-level, anomaly engine, worker pool, REST API, and end-to-end integration tests.
+- **124 tests, all green** — unit, parser-level, anomaly engine, worker pool, REST API, and end-to-end integration tests.
 
 ---
 
@@ -39,9 +39,9 @@ Every raw event is kept, untouched, on disk and linked back to its normalized fo
 |---|---|
 | ![Default View](docs/screenshots/dashboard-default.png) | ![Professional View](docs/screenshots/dashboard-professional.png) |
 
-| Traceability Forensic Split Inspector |
-|---|
-| ![Traceability Inspector](docs/screenshots/dashboard-inspector.png) |
+| Traceability Forensic Split Inspector | Live Host & Process Monitor |
+|---|---|
+| ![Traceability Inspector](docs/screenshots/dashboard-inspector.png) | ![Live Host Monitor](docs/screenshots/dashboard-livehost.png) |
 
 ---
 
@@ -237,7 +237,10 @@ ulpf list-parsers  # my_device appears automatically
 ## Tests
 
 ```bash
-# Run all 117 unit and integration tests
+# Run Master System Verification (Tests VPN, Cloud, MySQL, Windows, Live Host, SHA-256)
+python test_all.py
+
+# Run all 124 unit and integration tests via Pytest
 pytest ulpf/tests/ -v
 
 # Run with test coverage

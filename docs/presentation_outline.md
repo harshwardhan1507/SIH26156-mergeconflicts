@@ -11,7 +11,7 @@
 - Every new vendor means a new ETL pipeline. A 10-vendor SOC is maintaining 10 separate pipelines
   - One vendor firmware update can silently break a parser with no alert
 - You can't join `src_ip` from one source with `srcaddr` from another
-  - Cross-source correlation, compliance queries, and ML features all require a common schema first
+  - Cross-source correlation, compliance queries, and analytics features all require a common schema first
 - Goal: one pipeline, one schema, keep the original data, easy to add vendors
 
 ---
@@ -44,7 +44,7 @@
 - `event`: category (6-value enum), action, outcome (success/failure/unknown), severity_numeric (0-10 float)
   - `severity_numeric` is the normalized scale; `severity_original` keeps whatever the vendor sent
 - Nullable groups are `null`, not empty dicts
-  - ML pipelines and SQL engines handle null cleanly; empty dicts need special-casing
+  - Analytics pipelines and SQL engines handle null cleanly; empty dicts need special-casing
 - `lineage`: parser_name, parser_version, normalization_ruleset_version
   - You can tell exactly how any event was produced and reprocess with a fixed parser if needed
 - Failed validation goes to `dead_letter.ndjson` with the original raw line and error list

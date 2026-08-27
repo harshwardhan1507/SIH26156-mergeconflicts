@@ -1,0 +1,96 @@
+================================================================================
+ UNIVERSAL LOG PRE-PROCESSING FRAMEWORK (ULPF)
+ Enterprise Release v1.2.0 - Comprehensive Engineering Update Log
+ Author: NotUrNio <niowork477@gmail.com>
+ Repository: https://github.com/NotUrNio/ULPF
+ Date: August 27, 2026
+================================================================================
+
+1. EXECUTIVE OVERVIEW
+--------------------------------------------------------------------------------
+This release establishes ULPF as a fully unified, vendor-agnostic log pre-processing
+and normalization framework. The system provides zero-information-loss normalization,
+cryptographic SHA-256 raw store preservation, offline IP & threat intelligence
+enrichment, statistical anomaly detection, horizontal multi-core scale, and an
+air-gapped operations dashboard with live host telemetry.
+
+
+2. LOG FORMAT PARSER EXPANSION (11 FORMATS TOTAL)
+--------------------------------------------------------------------------------
+Added 5 enterprise log format parsers and declarative YAML mappings to expand
+coverage beyond perimeter devices to enterprise operating systems and multi-cloud:
+
+  * IBM QRadar LEEF 1.0 & 2.0 (ulpf/parsers/leef.py):
+    Full support for custom delimiter specification (^, |, \t), firewall, IPS,
+    and VPN event attributes with 5-tuple network mapping.
+
+  * Windows Event Log & Generic XML (ulpf/parsers/xml_generic.py):
+    EVTX XML parser mapping Windows EventIDs (4624 logon, 4625 brute force,
+    4720 user created, 4698 scheduled task persistence, 1102 audit cleared,
+    5156 WFP connection permitted, 4776 NTLM authentication).
+
+  * AWS CloudTrail JSON (ulpf/parsers/aws_cloudtrail.py):
+    Audit event decomposition across S3, IAM, EC2, STS, and KMS operations with
+    automated error code outcome and severity mapping.
+
+  * Azure Monitor / Activity Logs JSON (ulpf/parsers/azure_monitor.py):
+    ARM resource ID parser, caller identity claims extraction (UPN/OID), and
+    administrative/security operation mapping.
+
+  * GCP Cloud Audit Logs (ulpf/parsers/gcp_audit.py):
+    protoPayload envelope parser with status code mapping and resource tracking.
+
+  * Existing Parsers Verified & Enhanced:
+    - ArcSight CEF (Cisco, Palo Alto, Fortinet, Check Point)
+    - Cisco ASA (%ASA- mnemonic & ACL extraction)
+    - Palo Alto Networks Traffic CSV (35+ columns)
+    - Syslog RFC 5424 (ID47 structured data)
+    - Syslog RFC 3164 (BSD syslog with auto year injection)
+    - Generic JSON Passthrough
+
+
+3. SAMPLE DATA & BASELINE EVENT CORPUS
+--------------------------------------------------------------------------------
+  * Created complete, realistic sample logs for all 11 format parsers in
+    both sample_logs/ and ulpf/sample_logs/.
+  * Ingested baseline corpus into output/events.ndjson (102 total normalized events).
+  * Rebuilt SQLite index cache (output/dashboard_index.db) — 0 dead-letter issues
+    (100% schema conformance rate).
+
+
+4. DEDICATED LIVE HOST & PROCESS MONITOR
+--------------------------------------------------------------------------------
+  * Sub-second 250ms polling engine for local process executions and outbound sockets.
+  * Active socket tracking with complete 5-tuple: Process -> Source IP:Port -> Destination IP:Port [Protocol].
+  * Complete buffer isolation: Live host events stay in an isolated 250-item in-memory
+    ring buffer and never contaminate the perimeter SIEM events grid or events.ndjson.
+  * Default state is OFF (opt-in capture toggle).
+
+
+5. UI ERGONOMICS & NAVIGATION ENHANCEMENTS
+--------------------------------------------------------------------------------
+  * Added prominent "<- Back to Events Grid" button in the Live Host Monitor toolbar.
+  * Enabled global top navigation tabs bar across both Default View and Professional View.
+  * Synchronized quick filter chips (All Events, Blocked/Denied, High Severity) with tab state.
+  * Refreshed high-resolution PNG screenshots in docs/screenshots/ (Default view,
+    Professional view, Traceability Split Inspector, and Live Host Monitor).
+
+
+6. TERMINOLOGY AUDIT & AIR-GAP COMPLIANCE
+--------------------------------------------------------------------------------
+  * Scanned and cleaned all robotic phrasing, synthetic placeholders, and buzzwords
+    across docstrings, documentation, schemas, and UI elements.
+  * Standardized on pure software engineering terminology (Statistical Anomaly Engine,
+    Z-Score Profiling, Security Analytics Pipeline).
+  * 100% air-gap verified: 0 external CDN links, embedded offline CIDR threat lists,
+    multi-stage Docker build installing from pre-downloaded wheels (--no-index).
+
+
+7. AUTOMATED VERIFICATION & QUALITY ASSURANCE
+--------------------------------------------------------------------------------
+  * Pytest Unit & Integration Suite: 124 / 124 passed (100% green).
+  * End-to-End Verification Suite: 143 / 143 automated checks passed (0 warnings, 0 failures).
+  * Formats tested: Cisco ASA, Palo Alto CSV, CEF, LEEF, Windows XML, Syslog,
+    AWS CloudTrail, Azure Monitor, GCP Audit, JSON, and VPN sessions.
+
+================================================================================

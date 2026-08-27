@@ -43,7 +43,7 @@
       <div class="header-actions">
         <!-- Live SSE stream indicator -->
         <div id="liveStreamBadge" class="live-badge" style="display: none;">
-          <span class="pulse-dot"></span> Live Ingest
+          <span class="pulse-dot"></span> Stream Live
         </div>
 
         <!-- View Mode Segmented Control (Default vs Professional) -->
@@ -137,12 +137,17 @@
       </div>
     </section>
 
-    <!-- Pro Mode Tabs Bar -->
-    <div id="proTabsBar" class="pro-tabs-bar" style="display: none;">
+    <!-- Navigation Tabs Bar -->
+    <div id="proTabsBar" class="pro-tabs-bar">
       <div class="pro-tabs">
         <button class="pro-tab active" data-tab="events">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><line x1="3" y1="9" x2="21" y2="9"></line><line x1="9" y1="21" x2="9" y2="9"></line></svg>
           Events Grid
+        </button>
+        <button class="pro-tab" data-tab="livehost">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
+          ⚡ Live Host Logs
+          <span id="tabLiveHostDot" class="live-monitor-dot" style="display: none; margin-left: 4px; width: 6px; height: 6px;"></span>
         </button>
         <button class="pro-tab" data-tab="deadletter">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="7.86 2 16.14 2 22 7.86 22 16.14 16.14 22 7.86 22 2 16.14 2 7.86 7.86 2"></polygon><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
@@ -182,6 +187,7 @@
           <span class="chip active" data-filter="all">All Events</span>
           <span class="chip" data-filter="blocked">Blocked / Denied</span>
           <span class="chip" data-filter="high_sev">High Severity (≥7)</span>
+          <span class="chip" data-filter="live_host" style="border-color: var(--accent); color: var(--accent);">⚡ Live Host Logs</span>
         </div>
       </div>
 
@@ -290,6 +296,132 @@
     <section id="parsersPanel" style="display: none;">
       <div id="parsersGrid" class="parser-health-grid">
         <!-- Rendered by JS -->
+      </div>
+    </section>
+
+    <!-- Panel 4: Live Host & Process Monitor (Dedicated Workspace) -->
+    <section id="liveHostPanel" style="display: none;">
+      <!-- Host Monitor Control Bar -->
+      <div class="host-monitor-toolbar">
+        <div class="host-title-group">
+          <h3>
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
+            Live Host & Process Monitor
+          </h3>
+          <p class="host-subtitle">Isolated telemetry of local process executions (e.g. VALORANT, Chrome, Discord), active internet socket connections, and Windows system events.</p>
+        </div>
+        <div class="host-controls">
+          <button id="btnBackToEvents" class="btn-back-events" title="Return to Main Events Grid">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <line x1="19" y1="12" x2="5" y2="12"></line>
+              <polyline points="12 19 5 12 12 5"></polyline>
+            </svg>
+            <span>Back to Events Grid</span>
+          </button>
+          <button id="btnToggleHostMonitor" class="btn-live-host-toggle">
+            <span class="live-monitor-dot"></span>
+            <span id="btnToggleHostText">Start Live Capture</span>
+          </button>
+          <button id="btnRefreshHostData" class="btn-icon" title="Refresh Snapshot">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"></polyline><polyline points="1 20 1 14 7 14"></polyline><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path></svg>
+          </button>
+        </div>
+      </div>
+
+      <!-- Host Stats Grid -->
+      <div class="host-stats-grid">
+        <div class="host-stat-card">
+          <div class="host-stat-label">HOST SYSTEM</div>
+          <div id="hostStatName" class="host-stat-val">--</div>
+          <div id="hostStatUser" class="host-stat-sub">User: --</div>
+        </div>
+        <div class="host-stat-card">
+          <div class="host-stat-label">RUNNING PROCESSES</div>
+          <div id="hostStatProcs" class="host-stat-val">0</div>
+          <div class="host-stat-sub">Active OS tasks</div>
+        </div>
+        <div class="host-stat-card">
+          <div class="host-stat-label">OUTBOUND SOCKETS</div>
+          <div id="hostStatConns" class="host-stat-val">0</div>
+          <div class="host-stat-sub">Active internet destinations</div>
+        </div>
+        <div class="host-stat-card">
+          <div class="host-stat-label">CAPTURED EVENTS</div>
+          <div id="hostStatEvents" class="host-stat-val">0</div>
+          <div id="hostStatRate" class="host-stat-sub">Sub-second polling</div>
+        </div>
+      </div>
+
+      <!-- Host Sub-Tabs Navigation -->
+      <div class="host-subtabs-bar">
+        <div class="host-subtabs">
+          <button class="host-subtab active" data-subtab="connections">
+            Active Sockets & Destination IPs (<span id="countSubConns">0</span>)
+          </button>
+          <button class="host-subtab" data-subtab="events">
+            Process Execution Stream (<span id="countSubEvents">0</span>)
+          </button>
+          <button class="host-subtab" data-subtab="processes">
+            Running Processes List (<span id="countSubProcs">0</span>)
+          </button>
+        </div>
+      </div>
+
+      <!-- Host Sub-Views -->
+      <div id="hostSubViewConnections" class="host-subview">
+        <div class="host-table-wrap">
+          <table class="host-table">
+            <thead>
+              <tr>
+                <th>PROCESS</th>
+                <th>PID</th>
+                <th>SOURCE IP / PORT</th>
+                <th>DESTINATION IP / PORT</th>
+                <th>PROTO</th>
+                <th>STATE</th>
+              </tr>
+            </thead>
+            <tbody id="hostConnectionsTableBody">
+              <tr><td colspan="6" class="host-empty">Click "Start Live Capture" or refresh to inspect active socket destinations.</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div id="hostSubViewEvents" class="host-subview" style="display: none;">
+        <div class="host-table-wrap">
+          <table class="host-table">
+            <thead>
+              <tr>
+                <th>TIME</th>
+                <th>ACTION</th>
+                <th>PROCESS / ITEM</th>
+                <th>USER</th>
+                <th>ACTIVITY / MESSAGE</th>
+              </tr>
+            </thead>
+            <tbody id="hostEventsTableBody">
+              <tr><td colspan="5" class="host-empty">No host events captured yet. Click "Start Live Capture" to record process executions.</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div id="hostSubViewProcesses" class="host-subview" style="display: none;">
+        <div class="host-table-wrap">
+          <table class="host-table">
+            <thead>
+              <tr>
+                <th>PID</th>
+                <th>PROCESS NAME</th>
+                <th>EXECUTABLE PATH</th>
+              </tr>
+            </thead>
+            <tbody id="hostProcessesTableBody">
+              <tr><td colspan="3" class="host-empty">Loading processes snapshot...</td></tr>
+            </tbody>
+          </table>
+        </div>
       </div>
     </section>
 
