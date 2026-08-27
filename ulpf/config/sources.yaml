@@ -1,0 +1,20 @@
+# ULPF Source Configuration
+# Map source_tag prefixes to a specific format_id to bypass auto-detection.
+# source_tag is typically the file path or a logical label.
+
+sources:
+  # Example: force all files under /var/log/paloalto/ to use paloalto_csv
+  # - source_tag: /var/log/paloalto/
+  #   format: paloalto_csv
+
+  # Example: force stdin from a specific forwarder to use cef
+  # - source_tag: stdin
+  #   format: cef
+
+  []
+
+# Global pipeline settings
+pipeline:
+  dead_letter_filename: dead_letter.ndjson
+  raw_store_dir: output/raw_store
+  output_dir: output

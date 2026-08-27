@@ -1,0 +1,31 @@
+ruleset_version: "1.0.0"
+source:
+  vendor: null
+  product: null
+  device_hostname: host
+  source_ip: null
+  log_format: json
+event:
+  category: _category_default:network
+  action: event
+  outcome: result
+  severity_numeric: severity_ues
+  severity_original: null
+  event_type_vendor_specific: event
+network:
+  src_ip: src
+  src_port: src_port
+  dst_ip: dst
+  dst_port: dst_port
+  protocol: proto
+  bytes_in: bytes_in
+  bytes_out: bytes_out
+  direction: null
+  interface: null
+identity:
+  username: user
+  user_domain: domain
+rule:
+  rule_id: null
+  rule_name: null
+  policy_action: null

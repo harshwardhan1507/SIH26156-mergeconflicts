@@ -1,0 +1,72 @@
+"""
+UES Validation Gate.
+
+Validates every normalized event against the UES JSON Schema.
+Invalid events are written to a dead-letter NDJSON file.
+"""
+from __future__ import annotations
+
+import json
+import logging
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Any
+
+import jsonschema
+from jsonschema import Draft7Validator
+
+logger = logging.getLogger(__name__)
+
+
+class Validator:
+    def __init__(self, schema_path: str | Path, dead_letter_path: str | Path):
+        self.schema_path = Path(schema_path)
+        self.dead_letter_path = Path(dead_letter_path)
+        self.dead_letter_path.parent.mkdir(parents=True, exist_ok=True)
+
+        with open(self.schema_path, 'r', encoding='utf-8') as fh:
+            schema = json.load(fh)
+        self._validator = Draft7Validator(schema)
+        self._dl_fh = open(self.dead_letter_path, 'a', encoding='utf-8', buffering=1)
+        self._valid_count = 0
+        self._invalid_count = 0
+
+    def validate(self, event: dict[str, Any]) -> tuple[bool, list[str]]:
+        """Returns (is_valid, list_of_error_messages)."""
+        errors = [
+            f'{e.json_path}: {e.message}'
+            for e in sorted(self._validator.iter_errors(event), key=lambda e: list(e.path))
+        ]
+        return len(errors) == 0, errors
+
+    def validate_and_route(self, event: dict[str, Any]) -> bool:
+        """
+        Validate event. Returns True if valid, False if sent to dead-letter.
+        Writes invalid events to the dead-letter file.
+        """
+        is_valid, errors = self.validate(event)
+        if is_valid:
+            self._valid_count += 1
+            return True
+        else:
+            self._invalid_count += 1
+            dl_record = {
+                'event_id': event.get('event_id', 'unknown'),
+                'raw_payload': event.get('raw', {}).get('raw_payload', ''),
+                'errors': errors,
+                'timestamp': datetime.now(tz=timezone.utc).isoformat(),
+            }
+            self._dl_fh.write(json.dumps(dl_record) + '\n')
+            logger.warning('Event %s failed validation: %s', event.get('event_id'), errors)
+            return False
+
+    def close(self) -> None:
+        self._dl_fh.close()
+
+    @property
+    def valid_count(self) -> int:
+        return self._valid_count
+
+    @property
+    def invalid_count(self) -> int:
+        return self._invalid_count

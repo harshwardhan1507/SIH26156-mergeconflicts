@@ -1,0 +1,31 @@
+ruleset_version: "1.0.0"
+source:
+  vendor: null
+  product: null
+  device_hostname: hostname
+  source_ip: null
+  log_format: syslog_rfc3164
+event:
+  category: _category_default:network
+  action: null
+  outcome: null
+  severity_numeric: severity_ues
+  severity_original: syslog_severity_name
+  event_type_vendor_specific: tag
+network:
+  src_ip: null
+  src_port: null
+  dst_ip: null
+  dst_port: null
+  protocol: null
+  bytes_in: null
+  bytes_out: null
+  direction: null
+  interface: null
+identity:
+  username: null
+  user_domain: null
+rule:
+  rule_id: null
+  rule_name: null
+  policy_action: null

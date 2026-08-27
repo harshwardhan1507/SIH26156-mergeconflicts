@@ -1,0 +1,107 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "UniversalEventSchema",
+  "type": "object",
+  "required": ["event_id", "ingest_timestamp", "raw", "source", "event", "lineage"],
+  "additionalProperties": false,
+  "properties": {
+    "event_id": {"type": "string"},
+    "ingest_timestamp": {"type": "string"},
+    "source_event_timestamp": {"type": ["string", "null"]},
+    "raw": {
+      "type": "object",
+      "required": ["raw_payload", "raw_format", "raw_hash"],
+      "additionalProperties": false,
+      "properties": {
+        "raw_payload": {"type": "string"},
+        "raw_format": {
+          "type": "string",
+          "enum": ["syslog_rfc5424", "syslog_rfc3164", "cef", "leef", "json", "csv", "kv", "unknown"]
+        },
+        "raw_hash": {"type": "string", "pattern": "^[a-f0-9]{64}$"}
+      }
+    },
+    "source": {
+      "type": "object",
+      "required": ["log_format"],
+      "additionalProperties": false,
+      "properties": {
+        "vendor": {"type": ["string", "null"]},
+        "product": {"type": ["string", "null"]},
+        "device_hostname": {"type": ["string", "null"]},
+        "source_ip": {"type": ["string", "null"]},
+        "log_format": {"type": "string"}
+      }
+    },
+    "event": {
+      "type": "object",
+      "required": ["category", "severity_numeric"],
+      "additionalProperties": false,
+      "properties": {
+        "category": {
+          "type": "string",
+          "enum": ["network", "authentication", "threat", "system", "policy", "unknown"]
+        },
+        "action": {"type": ["string", "null"]},
+        "outcome": {"type": ["string", "null"], "enum": ["success", "failure", "unknown", null]},
+        "severity_numeric": {"type": "number", "minimum": 0, "maximum": 10},
+        "severity_original": {"type": ["string", "null"]},
+        "event_type_vendor_specific": {"type": ["string", "null"]}
+      }
+    },
+    "network": {
+      "type": ["object", "null"],
+      "additionalProperties": false,
+      "properties": {
+        "src_ip": {"type": ["string", "null"]},
+        "src_port": {"type": ["integer", "null"], "minimum": 0, "maximum": 65535},
+        "dst_ip": {"type": ["string", "null"]},
+        "dst_port": {"type": ["integer", "null"], "minimum": 0, "maximum": 65535},
+        "protocol": {"type": ["string", "null"]},
+        "bytes_in": {"type": ["integer", "null"], "minimum": 0},
+        "bytes_out": {"type": ["integer", "null"], "minimum": 0},
+        "direction": {
+          "type": ["string", "null"],
+          "enum": ["inbound", "outbound", "internal", "unknown", null]
+        },
+        "interface": {"type": ["string", "null"]}
+      }
+    },
+    "identity": {
+      "type": ["object", "null"],
+      "additionalProperties": false,
+      "properties": {
+        "username": {"type": ["string", "null"]},
+        "user_domain": {"type": ["string", "null"]}
+      }
+    },
+    "rule": {
+      "type": ["object", "null"],
+      "additionalProperties": false,
+      "properties": {
+        "rule_id": {"type": ["string", "null"]},
+        "rule_name": {"type": ["string", "null"]},
+        "policy_action": {"type": ["string", "null"]}
+      }
+    },
+    "enrichment": {
+      "type": ["object", "null"],
+      "additionalProperties": true,
+      "properties": {
+        "geo_src": {"type": ["object", "null"]},
+        "geo_dst": {"type": ["object", "null"]},
+        "threat_intel_tags": {"type": ["array", "null"], "items": {"type": "string"}}
+      }
+    },
+    "lineage": {
+      "type": "object",
+      "required": ["parser_name", "parser_version", "normalization_ruleset_version"],
+      "additionalProperties": false,
+      "properties": {
+        "parser_name": {"type": "string"},
+        "parser_version": {"type": "string"},
+        "normalization_ruleset_version": {"type": "string"}
+      }
+    }
+  }
+}

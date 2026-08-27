@@ -1,0 +1,31 @@
+ruleset_version: "1.0.0"
+source:
+  vendor: DeviceVendor
+  product: DeviceProduct
+  device_hostname: dhost
+  source_ip: dvc
+  log_format: cef
+event:
+  category: _category_default:network
+  action: act
+  outcome: _outcome_from_action
+  severity_numeric: severity_ues
+  severity_original: Severity
+  event_type_vendor_specific: SignatureID
+network:
+  src_ip: src
+  src_port: spt
+  dst_ip: dst
+  dst_port: dpt
+  protocol: proto
+  bytes_in: in
+  bytes_out: out
+  direction: deviceDirection
+  interface: deviceInboundInterface
+identity:
+  username: suser
+  user_domain: null
+rule:
+  rule_id: SignatureID
+  rule_name: Name
+  policy_action: act

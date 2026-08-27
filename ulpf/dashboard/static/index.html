@@ -1,0 +1,372 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light" data-view="default">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ULPF — Universal Log Operations Dashboard</title>
+  <link rel="stylesheet" href="/static/style.css">
+<body>
+  <!-- Full Screen Initial Loading / Splash Screen (0% to 100%) -->
+  <div id="loadingScreen" class="loading-screen">
+    <div class="loading-container">
+      <div class="loading-logo-box">
+        <div class="loading-logo-glyph">U</div>
+        <div class="loading-ring"></div>
+      </div>
+      <div class="loading-app-name">ULPF Operations Center</div>
+      <div class="loading-app-desc">Universal Log Pre-processing Framework</div>
+
+      <div class="loading-progress-wrapper">
+        <div class="loading-progress-bar">
+          <div id="loadingProgressFill" class="loading-progress-fill" style="width: 0%;"></div>
+        </div>
+        <div class="loading-stats">
+          <span id="loadingStepText">Initializing pipeline interface...</span>
+          <span id="loadingPercentText" class="loading-percent mono-text">0%</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="app-container">
+
+    <!-- Top Application Header -->
+    <header class="app-header">
+      <div class="brand-section">
+        <div class="brand-logo">U</div>
+        <div class="brand-titles">
+          <h1>ULPF Operations Center</h1>
+          <div class="brand-subtitle">Universal Log Pre-processing Framework</div>
+        </div>
+      </div>
+
+      <div class="header-actions">
+        <!-- Live SSE stream indicator -->
+        <div id="liveStreamBadge" class="live-badge" style="display: none;">
+          <span class="pulse-dot"></span> Live Ingest
+        </div>
+
+        <!-- View Mode Segmented Control (Default vs Professional) -->
+        <div class="view-mode-switch">
+          <button id="viewDefaultBtn" class="mode-btn active" title="Switch to Default View (Simplified / Overview)">Default View</button>
+          <button id="viewProBtn" class="mode-btn" title="Switch to Professional View (Full UES / Operations Grid)">Professional View</button>
+        </div>
+
+        <!-- Color Theme Toggle (Light / Dark) -->
+        <button id="colorThemeBtn" class="btn-theme-mode" title="Toggle Light / Dark Theme (Hotkey: t)">
+          <svg id="themeIconSun" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="display: none;">
+            <circle cx="12" cy="12" r="5"></circle>
+            <line x1="12" y1="1" x2="12" y2="3"></line>
+            <line x1="12" y1="21" x2="12" y2="23"></line>
+            <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line>
+            <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line>
+            <line x1="1" y1="12" x2="3" y2="12"></line>
+            <line x1="21" y1="12" x2="23" y2="12"></line>
+            <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line>
+            <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line>
+          </svg>
+          <svg id="themeIconMoon" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path>
+          </svg>
+          <span id="colorThemeText">Dark</span>
+        </button>
+
+        <!-- Help shortcuts button -->
+        <button id="shortcutsHelpBtn" class="btn-icon" title="Keyboard Shortcuts (?)" aria-label="Keyboard Shortcuts">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="12" cy="12" r="10"></circle>
+            <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"></path>
+            <line x1="12" y1="17" x2="12.01" y2="17"></line>
+          </svg>
+        </button>
+      </div>
+    </header>
+
+    <!-- Default Theme: 4 Metric Cards -->
+    <section id="metricsGrid" class="metrics-grid">
+      <div class="metric-card">
+        <div class="metric-header">
+          <span>Total Normalized Events</span>
+          <span class="has-tooltip" data-tooltip="All events validated against Universal Event Schema">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line></svg>
+          </span>
+        </div>
+        <div id="statTotalEvents" class="metric-value">--</div>
+        <div class="metric-footer">
+          <span style="color: var(--color-success);">● Active Pipeline</span>
+        </div>
+      </div>
+
+      <div class="metric-card">
+        <div class="metric-header">
+          <span>Dead-Letter / Schema Issues</span>
+          <span class="has-tooltip" data-tooltip="Events that failed JSON Schema validation and were quarantined">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line></svg>
+          </span>
+        </div>
+        <div id="statIssuesCount" class="metric-value" style="color: var(--color-success);">0</div>
+        <div class="metric-footer">
+          <span>100% Schema Conformance</span>
+        </div>
+      </div>
+
+      <div class="metric-card">
+        <div class="metric-header">
+          <span>Top Ingestion Sources</span>
+          <span class="has-tooltip" data-tooltip="Perimeter security devices emitting highest log volumes">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line></svg>
+          </span>
+        </div>
+        <div id="statTopVendors" class="vendor-pills" style="margin: 8px 0;">--</div>
+        <div class="metric-footer">
+          <span>Multi-vendor unified</span>
+        </div>
+      </div>
+
+      <div class="metric-card">
+        <div class="metric-header">
+          <span>Velocity</span>
+          <span class="has-tooltip" data-tooltip="Rate of normalized events received in the last hour">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line></svg>
+          </span>
+        </div>
+        <div id="statVelocity" class="metric-value">-- / hr</div>
+        <div class="metric-footer">
+          <span>Real-time stream ready</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- Pro Mode Tabs Bar -->
+    <div id="proTabsBar" class="pro-tabs-bar" style="display: none;">
+      <div class="pro-tabs">
+        <button class="pro-tab active" data-tab="events">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><line x1="3" y1="9" x2="21" y2="9"></line><line x1="9" y1="21" x2="9" y2="9"></line></svg>
+          Events Grid
+        </button>
+        <button class="pro-tab" data-tab="deadletter">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="7.86 2 16.14 2 22 7.86 22 16.14 16.14 22 7.86 22 2 16.14 2 7.86 7.86 2"></polygon><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
+          Dead-Letter Quarantine
+          <span id="tabDeadLetterBadge" class="tab-badge">0</span>
+        </button>
+        <button class="pro-tab" data-tab="parsers">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"></path></svg>
+          Parser Matrix
+        </button>
+      </div>
+
+      <div class="tab-actions">
+        <button id="exportCsvBtn" class="btn-icon" title="Export Filtered Results (CSV)">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+          <span style="font-size: 0.78rem; margin-left: 4px; font-weight: 600;">CSV</span>
+        </button>
+        <button id="exportJsonBtn" class="btn-icon" title="Export Filtered Results (JSON Lines)">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+          <span style="font-size: 0.78rem; margin-left: 4px; font-weight: 600;">JSON</span>
+        </button>
+      </div>
+    </div>
+
+    <!-- Filter & Search Controls -->
+    <section class="filter-section">
+      <div class="search-and-quickfilters">
+        <div class="search-box">
+          <svg class="search-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+          </svg>
+          <input type="text" id="searchInput" placeholder="Search events, IPs, hostnames, usernames, categories...">
+          <span class="search-shortcut-hint">/</span>
+        </div>
+
+        <div id="quickChips" class="quick-chips">
+          <span class="chip active" data-filter="all">All Events</span>
+          <span class="chip" data-filter="blocked">Blocked / Denied</span>
+          <span class="chip" data-filter="high_sev">High Severity (≥7)</span>
+        </div>
+      </div>
+
+      <!-- Advanced Pro Filters (hidden in default view) -->
+      <div id="proFiltersPanel" class="pro-filters-panel" style="display: none;">
+        <div class="filter-group">
+          <label>Vendor</label>
+          <select id="vendorFilter">
+            <option value="">All Vendors</option>
+            <option value="Cisco">Cisco</option>
+            <option value="Palo Alto Networks">Palo Alto Networks</option>
+          </select>
+        </div>
+
+        <div class="filter-group">
+          <label>Category</label>
+          <select id="categoryFilter">
+            <option value="">All Categories</option>
+            <option value="network">Network</option>
+            <option value="authentication">Authentication</option>
+            <option value="threat">Threat</option>
+            <option value="system">System</option>
+            <option value="policy">Policy</option>
+          </select>
+        </div>
+
+        <div class="filter-group">
+          <label>Action</label>
+          <select id="actionFilter">
+            <option value="">All Actions</option>
+            <option value="allow">Allow</option>
+            <option value="deny">Deny / Drop</option>
+            <option value="permit">Permit</option>
+          </select>
+        </div>
+
+        <div class="filter-group">
+          <label>Outcome</label>
+          <select id="outcomeFilter">
+            <option value="">All Outcomes</option>
+            <option value="success">Success</option>
+            <option value="failure">Failure</option>
+          </select>
+        </div>
+
+        <div class="filter-group">
+          <label>Parser Plugin</label>
+          <select id="parserFilter">
+            <option value="">All Parsers</option>
+            <option value="cisco_asa">cisco_asa</option>
+            <option value="cef">cef</option>
+            <option value="paloalto_csv">paloalto_csv</option>
+            <option value="json_passthrough">json_passthrough</option>
+            <option value="syslog_rfc3164">syslog_rfc3164</option>
+            <option value="syslog_rfc5424">syslog_rfc5424</option>
+          </select>
+        </div>
+      </div>
+    </section>
+
+    <!-- Main Panel: Virtualized Events Table -->
+    <main id="eventsPanel" class="table-container">
+      <div class="table-toolbar">
+        <div>
+          <span>Drag column borders to resize</span>
+        </div>
+        <div class="table-toolbar-actions">
+          <span style="font-size: 0.72rem; color: var(--text-muted);">Width Preset:</span>
+          <button id="densityCompactBtn" class="toolbar-btn">Compact</button>
+          <button id="densityStandardBtn" class="toolbar-btn active">Standard</button>
+          <button id="densityComfortableBtn" class="toolbar-btn">Comfortable</button>
+          <button id="resetWidthsBtn" class="toolbar-btn" title="Reset all column widths to default">Reset</button>
+        </div>
+      </div>
+
+      <div class="table-scroll-wrapper">
+        <div id="tableHeaderRow" class="table-header-row">
+          <!-- Dynamic header rendered by JS -->
+        </div>
+
+        <div id="virtualViewport" class="virtual-viewport">
+          <div id="virtualSpacer" class="virtual-spacer"></div>
+          <div id="virtualContent" class="virtual-content">
+            <!-- Virtual DOM items rendered by VirtualScroller -->
+          </div>
+        </div>
+      </div>
+
+      <footer class="table-footer">
+        <div id="pageInfo">Loading events...</div>
+        <div class="pagination-controls">
+          <button id="prevPageBtn" class="pagination-btn" disabled>Previous</button>
+          <button id="nextPageBtn" class="pagination-btn" disabled>Next</button>
+        </div>
+      </footer>
+    </main>
+
+    <!-- Pro Panel 2: Dead Letter Quarantine -->
+    <section id="deadLetterPanel" style="display: none;">
+      <div id="deadLetterList">
+        <!-- Rendered by JS -->
+      </div>
+    </section>
+
+    <!-- Pro Panel 3: Parser Health Matrix -->
+    <section id="parsersPanel" style="display: none;">
+      <div id="parsersGrid" class="parser-health-grid">
+        <!-- Rendered by JS -->
+      </div>
+    </section>
+
+  </div>
+
+  <!-- Traceability Side-by-Side Split Inspector Modal -->
+  <div id="inspectorModal" class="modal-backdrop">
+    <div class="modal-card">
+      <div class="modal-header">
+        <div class="modal-title-group">
+          <h2>
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 14 14"></polyline></svg>
+            Traceability & Integrity Inspector
+          </h2>
+          <div style="font-size: 0.8rem; color: var(--text-muted); margin-top: 4px;">
+            UUID: <span id="inspectEventId" class="mono-text" style="color: var(--text-primary);">--</span> |
+            Parser: <span id="inspectParser" class="badge badge-subtle">--</span> |
+            Format: <span id="inspectRawFormat" class="badge badge-subtle">--</span> |
+            SHA-256: <span id="inspectRawHash" class="mono-text" style="font-size: 0.72rem; color: var(--text-muted);">--</span>
+          </div>
+        </div>
+
+        <button id="closeInspectorBtn" class="btn-icon" aria-label="Close Inspector (Esc)">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+        </button>
+      </div>
+
+      <div class="modal-body">
+        <div class="traceability-split">
+          <!-- Left Pane: Untouched Raw Forensic Payload -->
+          <div class="split-pane">
+            <div class="pane-header">
+              <span>ORIGINAL RAW PAYLOAD (Forensic Store)</span>
+              <button id="copyRawBtn" class="pagination-btn">Copy Raw</button>
+            </div>
+            <pre id="inspectRawPayload" class="code-viewer"></pre>
+          </div>
+
+          <!-- Right Pane: Validated UES Schema JSON -->
+          <div class="split-pane">
+            <div class="pane-header">
+              <span>NORMALIZED UNIVERSAL EVENT SCHEMA (UES JSON)</span>
+              <button id="copyJsonBtn" class="pagination-btn">Copy JSON</button>
+            </div>
+            <pre id="inspectUesJson" class="code-viewer"></pre>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Keyboard Shortcuts Cheat Sheet Modal -->
+  <div id="shortcutsModal" class="modal-backdrop">
+    <div class="modal-card" style="max-width: 500px;">
+      <div class="modal-header">
+        <h2>Keyboard Shortcuts</h2>
+        <button id="closeShortcutsBtn" class="btn-icon">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+        </button>
+      </div>
+      <div class="modal-body">
+        <table class="shortcuts-table">
+          <tr><td><kbd>/</kbd></td><td>Focus search bar</td></tr>
+          <tr><td><kbd>j</kbd> / <kbd>↓</kbd></td><td>Select next event row</td></tr>
+          <tr><td><kbd>k</kbd> / <kbd>↑</kbd></td><td>Select previous event row</td></tr>
+          <tr><td><kbd>Enter</kbd></td><td>Inspect selected event in Split View</td></tr>
+          <tr><td><kbd>t</kbd></td><td>Toggle Color Theme (Light / Dark)</td></tr>
+          <tr><td><kbd>v</kbd></td><td>Toggle View Mode (Default / Professional)</td></tr>
+          <tr><td><kbd>d</kbd></td><td>Switch to Default View</td></tr>
+          <tr><td><kbd>p</kbd></td><td>Switch to Professional View</td></tr>
+          <tr><td><kbd>Esc</kbd></td><td>Close active modal / Unfocus search</td></tr>
+          <tr><td><kbd>?</kbd></td><td>Show this keyboard shortcuts guide</td></tr>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>

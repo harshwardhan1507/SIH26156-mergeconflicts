@@ -1,0 +1,77 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1100 620" width="100%" height="100%" style="background:#0f172a; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;">
+  <defs>
+    <filter id="shadow" x="-10%" y="-10%" width="120%" height="120%">
+      <feDropShadow dx="0" dy="4" stdDeviation="6" flood-color="#000000" flood-opacity="0.35"/>
+    </filter>
+    <marker id="arrow" viewBox="0 0 10 10" refX="6" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M 0 1 L 10 5 L 0 9 z" fill="#14b8a6"/>
+    </marker>
+  </defs>
+
+  <text x="40" y="45" font-size="22" font-weight="bold" fill="#f8fafc" letter-spacing="0.5">ULPF Architecture &amp; Data Pipeline</text>
+  <text x="40" y="68" font-size="13" fill="#94a3b8">Universal Log Pre-processing Framework — Zero-Loss Normalization &amp; Air-Gapped Operations</text>
+  
+  <g transform="translate(40, 95)" filter="url(#shadow)">
+    <rect width="170" height="470" rx="10" fill="#1e293b" stroke="#334155" stroke-width="1.5"/>
+    <rect width="170" height="36" rx="10" fill="#334155"/>
+    <rect y="26" width="170" height="10" fill="#334155"/>
+    <text x="85" y="23" font-size="12" font-weight="bold" fill="#f8fafc" text-anchor="middle">1. INGESTION</text>
+    <g transform="translate(15, 55)"><rect width="140" height="48" rx="6" fill="#0f172a" stroke="#475569"/><text x="12" y="22" font-size="12" font-weight="bold" fill="#e2e8f0">Cisco ASA</text><text x="12" y="38" font-size="10" fill="#94a3b8">%ASA-6-106100...</text></g>
+    <g transform="translate(15, 115)"><rect width="140" height="48" rx="6" fill="#0f172a" stroke="#475569"/><text x="12" y="22" font-size="12" font-weight="bold" fill="#e2e8f0">Palo Alto CSV</text><text x="12" y="38" font-size="10" fill="#94a3b8">PAN-OS Traffic logs</text></g>
+    <g transform="translate(15, 175)"><rect width="140" height="48" rx="6" fill="#0f172a" stroke="#475569"/><text x="12" y="22" font-size="12" font-weight="bold" fill="#e2e8f0">CEF Security</text><text x="12" y="38" font-size="10" fill="#94a3b8">CEF:0|Vendor|...</text></g>
+    <g transform="translate(15, 235)"><rect width="140" height="48" rx="6" fill="#0f172a" stroke="#475569"/><text x="12" y="22" font-size="12" font-weight="bold" fill="#e2e8f0">Syslog RFC 5424/3164</text><text x="12" y="38" font-size="10" fill="#94a3b8">&lt;PRI&gt; Syslog records</text></g>
+    <g transform="translate(15, 295)"><rect width="140" height="48" rx="6" fill="#0f172a" stroke="#475569"/><text x="12" y="22" font-size="12" font-weight="bold" fill="#e2e8f0">Generic JSON</text><text x="12" y="38" font-size="10" fill="#94a3b8">Structured payloads</text></g>
+    <g transform="translate(15, 365)"><rect width="140" height="80" rx="6" fill="#0f172a" stroke="#0d9488" stroke-dasharray="3,3"/><text x="70" y="24" font-size="11" font-weight="bold" fill="#14b8a6" text-anchor="middle">Reader Modes</text><text x="70" y="42" font-size="10" fill="#cbd5e1" text-anchor="middle">• FileReader (batch)</text><text x="70" y="58" font-size="10" fill="#cbd5e1" text-anchor="middle">• StdinReader (pipe)</text></g>
+  </g>
+
+  <line x1="210" y1="330" x2="245" y2="330" stroke="#14b8a6" stroke-width="2" marker-end="url(#arrow)"/>
+
+  <g transform="translate(250, 95)" filter="url(#shadow)">
+    <rect width="175" height="470" rx="10" fill="#1e293b" stroke="#334155" stroke-width="1.5"/>
+    <rect width="175" height="36" rx="10" fill="#334155"/>
+    <rect y="26" width="175" height="10" fill="#334155"/>
+    <text x="87" y="23" font-size="12" font-weight="bold" fill="#f8fafc" text-anchor="middle">2. DETECT &amp; PARSE</text>
+    <g transform="translate(15, 55)"><rect width="145" height="100" rx="6" fill="#0f172a" stroke="#0d9488" stroke-width="1.5"/><text x="72" y="22" font-size="11" font-weight="bold" fill="#14b8a6" text-anchor="middle">FormatDetector</text><text x="10" y="42" font-size="9.5" fill="#94a3b8">1. sources.yaml override</text><text x="10" y="58" font-size="9.5" fill="#94a3b8">2. %ASA regex match</text><text x="10" y="74" font-size="9.5" fill="#94a3b8">3. CEF: header match</text><text x="10" y="90" font-size="9.5" fill="#94a3b8">4. RFC regex / CSV / JSON</text></g>
+    <g transform="translate(15, 180)"><rect width="145" height="180" rx="6" fill="#0f172a" stroke="#3b82f6" stroke-width="1.5"/><text x="72" y="22" font-size="11" font-weight="bold" fill="#60a5fa" text-anchor="middle">Parser Plugins</text><text x="72" y="36" font-size="9" fill="#64748b" text-anchor="middle">@register_parser</text><line x1="10" y1="44" x2="135" y2="44" stroke="#334155"/><text x="15" y="62" font-size="9.5" fill="#e2e8f0">• cisco_asa.py</text><text x="15" y="80" font-size="9.5" fill="#e2e8f0">• paloalto_csv.py</text><text x="15" y="98" font-size="9.5" fill="#e2e8f0">• cef.py</text><text x="15" y="116" font-size="9.5" fill="#e2e8f0">• syslog_rfc5424.py</text><text x="15" y="134" font-size="9.5" fill="#e2e8f0">• syslog_rfc3164.py</text><text x="15" y="152" font-size="9.5" fill="#e2e8f0">• json_passthrough.py</text><text x="15" y="170" font-size="9" fill="#14b8a6">+ Custom Plugins</text></g>
+    <g transform="translate(15, 380)"><rect width="145" height="65" rx="6" fill="#0f172a" stroke="#475569"/><text x="72" y="20" font-size="10.5" font-weight="bold" fill="#cbd5e1" text-anchor="middle">BaseParser ABC</text><text x="10" y="38" font-size="9" fill="#94a3b8">• parse_timestamp (UTC)</text><text x="10" y="52" font-size="9" fill="#94a3b8">• validate_ip / safe_port</text></g>
+  </g>
+
+  <line x1="425" y1="330" x2="460" y2="330" stroke="#14b8a6" stroke-width="2" marker-end="url(#arrow)"/>
+
+  <g transform="translate(465, 95)" filter="url(#shadow)">
+    <rect width="185" height="470" rx="10" fill="#1e293b" stroke="#334155" stroke-width="1.5"/>
+    <rect width="185" height="36" rx="10" fill="#334155"/>
+    <rect y="26" width="185" height="10" fill="#334155"/>
+    <text x="92" y="23" font-size="12" font-weight="bold" fill="#f8fafc" text-anchor="middle">3. NORMALIZE &amp; AUDIT</text>
+    <g transform="translate(15, 55)"><rect width="155" height="115" rx="6" fill="#0f172a" stroke="#0d9488" stroke-width="1.5"/><text x="77" y="20" font-size="11" font-weight="bold" fill="#14b8a6" text-anchor="middle">NormalizationEngine</text><text x="10" y="38" font-size="9.5" fill="#cbd5e1">Declarative YAML Mappings:</text><text x="15" y="55" font-size="9" fill="#94a3b8">• cef.yaml, cisco_asa.yaml</text><text x="15" y="70" font-size="9" fill="#94a3b8">• _category_default:*</text><text x="15" y="85" font-size="9" fill="#94a3b8">• _outcome_from_action</text><text x="15" y="100" font-size="9" fill="#94a3b8">• _direction_from_zones</text></g>
+    <g transform="translate(15, 190)"><rect width="155" height="115" rx="6" fill="#0f172a" stroke="#10b981" stroke-width="1.5"/><text x="77" y="20" font-size="11" font-weight="bold" fill="#10b981" text-anchor="middle">FileRawStore (Immutable)</text><text x="10" y="38" font-size="9.5" fill="#cbd5e1">Zero-Loss Forensic Store:</text><text x="10" y="56" font-size="9" fill="#94a3b8">• Key: UUID (event_id)</text><text x="10" y="72" font-size="9" fill="#94a3b8">• Shard: &lt;aa&gt;/&lt;bb&gt;/&lt;id&gt;.raw</text><text x="10" y="88" font-size="9" fill="#94a3b8">• SHA-256 integrity hash</text><text x="10" y="104" font-size="9" fill="#10b981">• Exact raw payload query</text></g>
+    <g transform="translate(15, 325)"><rect width="155" height="120" rx="6" fill="#0f172a" stroke="#f59e0b" stroke-width="1.5"/><text x="77" y="20" font-size="11" font-weight="bold" fill="#f59e0b" text-anchor="middle">UES Validator</text><text x="10" y="38" font-size="9.5" fill="#cbd5e1">JSON Schema Draft-7:</text><text x="10" y="54" font-size="9" fill="#94a3b8">• source, event, network</text><text x="10" y="69" font-size="9" fill="#94a3b8">• identity, rule, lineage</text><text x="10" y="86" font-size="9" fill="#94a3b8">• strict types + enums</text><text x="10" y="104" font-size="9" fill="#ef4444">• dead_letter on failure</text></g>
+  </g>
+
+  <line x1="650" y1="330" x2="685" y2="330" stroke="#14b8a6" stroke-width="2" marker-end="url(#arrow)"/>
+
+  <g transform="translate(690, 95)" filter="url(#shadow)">
+    <rect width="160" height="470" rx="10" fill="#1e293b" stroke="#334155" stroke-width="1.5"/>
+    <rect width="160" height="36" rx="10" fill="#334155"/>
+    <rect y="26" width="160" height="10" fill="#334155"/>
+    <text x="80" y="23" font-size="12" font-weight="bold" fill="#f8fafc" text-anchor="middle">4. EMIT &amp; SINK</text>
+    <g transform="translate(15, 60)"><rect width="130" height="100" rx="6" fill="#0f172a" stroke="#0d9488" stroke-width="1.5"/><text x="65" y="22" font-size="11" font-weight="bold" fill="#14b8a6" text-anchor="middle">events.ndjson</text><text x="10" y="44" font-size="9.5" fill="#cbd5e1">Normalized sink</text><text x="10" y="62" font-size="9" fill="#94a3b8">1 line per event</text><text x="10" y="78" font-size="9" fill="#94a3b8">Ready for SIEM/ML</text></g>
+    <g transform="translate(15, 180)"><rect width="130" height="95" rx="6" fill="#0f172a" stroke="#ef4444" stroke-width="1.5"/><text x="65" y="22" font-size="11" font-weight="bold" fill="#ef4444" text-anchor="middle">dead_letter.ndjson</text><text x="10" y="44" font-size="9.5" fill="#cbd5e1">Quarantine sink</text><text x="10" y="62" font-size="9" fill="#94a3b8">Schema invalid</text><text x="10" y="78" font-size="9" fill="#94a3b8">Exact error tree</text></g>
+    <g transform="translate(15, 295)"><rect width="130" height="90" rx="6" fill="#0f172a" stroke="#8b5cf6" stroke-width="1.5"/><text x="65" y="22" font-size="11" font-weight="bold" fill="#a78bfa" text-anchor="middle">Kafka Stub Sink</text><text x="10" y="44" font-size="9.5" fill="#cbd5e1">Kafka envelope</text><text x="10" y="62" font-size="9" fill="#94a3b8">Air-gap broker</text><text x="10" y="78" font-size="9" fill="#94a3b8">Topic partitioning</text></g>
+    <g transform="translate(15, 400)"><rect width="130" height="48" rx="6" fill="#0f172a" stroke="#475569"/><text x="65" y="20" font-size="10.5" font-weight="bold" fill="#cbd5e1" text-anchor="middle">CLI Lookup</text><text x="65" y="36" font-size="9" fill="#94a3b8" text-anchor="middle">ulpf lookup --event-id</text></g>
+  </g>
+
+  <line x1="850" y1="330" x2="885" y2="330" stroke="#14b8a6" stroke-width="2" marker-end="url(#arrow)"/>
+
+  <g transform="translate(890, 95)" filter="url(#shadow)">
+    <rect width="170" height="470" rx="10" fill="#1e293b" stroke="#0d9488" stroke-width="2"/>
+    <rect width="170" height="36" rx="10" fill="#0d9488"/>
+    <rect y="26" width="170" height="10" fill="#0d9488"/>
+    <text x="85" y="23" font-size="12" font-weight="bold" fill="#ffffff" text-anchor="middle">5. OPERATIONS UI</text>
+    <g transform="translate(12, 50)"><rect width="146" height="75" rx="6" fill="#0f172a" stroke="#14b8a6"/><text x="73" y="20" font-size="11" font-weight="bold" fill="#14b8a6" text-anchor="middle">SQLite Indexer</text><text x="10" y="38" font-size="9" fill="#94a3b8">• Sub-millisecond queries</text><text x="10" y="52" font-size="9" fill="#94a3b8">• Incremental sync</text><text x="10" y="66" font-size="9" fill="#94a3b8">• Disposable cache</text></g>
+    <g transform="translate(12, 135)"><rect width="146" height="80" rx="6" fill="#0f172a" stroke="#3b82f6"/><text x="73" y="20" font-size="11" font-weight="bold" fill="#60a5fa" text-anchor="middle">Dual View Modes</text><text x="10" y="38" font-size="9" fill="#cbd5e1">• Default (Cards)</text><text x="10" y="54" font-size="9" fill="#cbd5e1">• Professional (UES)</text><text x="10" y="70" font-size="9" fill="#10b981">• Light &amp; Dark Themes</text></g>
+    <g transform="translate(12, 225)"><rect width="146" height="75" rx="6" fill="#0f172a" stroke="#10b981"/><text x="73" y="20" font-size="10.5" font-weight="bold" fill="#10b981" text-anchor="middle">Traceability Split</text><text x="10" y="38" font-size="9" fill="#94a3b8">• Side-by-side modal</text><text x="10" y="52" font-size="9" fill="#94a3b8">• Raw text vs UES JSON</text><text x="10" y="66" font-size="9" fill="#94a3b8">• SHA-256 hash verify</text></g>
+    <g transform="translate(12, 310)"><rect width="146" height="75" rx="6" fill="#0f172a" stroke="#ef4444"/><text x="73" y="20" font-size="10.5" font-weight="bold" fill="#ef4444" text-anchor="middle">Quarantine &amp; Health</text><text x="10" y="38" font-size="9" fill="#94a3b8">• Dead-letter viewer</text><text x="10" y="52" font-size="9" fill="#94a3b8">• Parser throughput</text><text x="10" y="66" font-size="9" fill="#94a3b8">• Live SSE streaming</text></g>
+    <g transform="translate(12, 395)"><rect width="146" height="60" rx="6" fill="#0f172a" stroke="#8b5cf6"/><text x="73" y="18" font-size="10" font-weight="bold" fill="#a78bfa" text-anchor="middle">Mobile &amp; Resizing</text><text x="10" y="34" font-size="8.5" fill="#94a3b8">• Drag-to-resize cols</text><text x="10" y="48" font-size="8.5" fill="#94a3b8">• Touch mobile layout</text></g>
+  </g>
+</svg>

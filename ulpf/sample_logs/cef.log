@@ -1,0 +1,5 @@
+CEF:0|Cisco|ASA|9.14|106023|Deny TCP (no connection)|5|src=10.1.1.5 spt=44321 dst=203.0.113.42 dpt=443 proto=TCP act=deny dhost=fw01 rt=1710498165000
+CEF:0|Palo Alto Networks|PAN-OS|10.2|threat-12345|Malware detected in traffic|9|src=10.0.5.100 spt=52100 dst=198.51.100.200 dpt=80 proto=TCP act=block suser=jsmith Name=Eicar-Test-File SignatureID=threat-12345 rt=1710498200000
+CEF:0|Fortinet|FortiGate|7.0|utm:antivirus|Virus Found|8|src=192.168.1.50 dst=93.184.216.34 spt=60123 dpt=80 proto=TCP act=blocked suser=alice deviceDirection=1 rt=1710498250000
+CEF:0|Check Point|FW-1|R81|accept|Traffic Accepted|3|src=10.5.0.22 dst=8.8.8.8 spt=53412 dpt=443 proto=TCP act=accept dhost=cpfw01 rt=1710498300000
+CEF:0|Juniper|SRX|21.4|RT_FLOW_SESSION_CREATE|Session Created|2|src=172.16.0.100 spt=61000 dst=203.0.113.15 dpt=22 proto=TCP act=allow rt=1710498350000

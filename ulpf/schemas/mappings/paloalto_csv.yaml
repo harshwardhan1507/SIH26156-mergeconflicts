@@ -1,0 +1,31 @@
+ruleset_version: "1.0.0"
+source:
+  vendor: vendor
+  product: product
+  device_hostname: null
+  source_ip: null
+  log_format: csv
+event:
+  category: _category_default:network
+  action: action_ues
+  outcome: _outcome_from_action
+  severity_numeric: severity_ues
+  severity_original: action_raw
+  event_type_vendor_specific: app
+network:
+  src_ip: src_ip
+  src_port: src_port
+  dst_ip: dst_ip
+  dst_port: dst_port
+  protocol: proto
+  bytes_in: bytes_received
+  bytes_out: bytes_sent
+  direction: _direction_from_zones
+  interface: inbound_if
+identity:
+  username: src_user
+  user_domain: null
+rule:
+  rule_id: null
+  rule_name: rule
+  policy_action: action_ues

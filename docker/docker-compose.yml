@@ -1,0 +1,47 @@
+version: "3.9"
+
+services:
+  ulpf:
+    build:
+      context: ..          # project root
+      dockerfile: docker/Dockerfile
+    image: ulpf:latest
+    container_name: ulpf-pipeline
+    # Disable all network access (air-gap simulation)
+    network_mode: none
+    volumes:
+      - ./output:/app/output
+    environment:
+      - PYTHONUNBUFFERED=1
+    command:
+      - ingest
+      - --input
+      - /app/sample_logs
+      - --output
+      - /app/output
+      - --log-level
+      - INFO
+    restart: "no"
+
+  dashboard:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    image: ulpf:latest
+    container_name: ulpf-dashboard
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./output:/app/output
+    environment:
+      - PYTHONUNBUFFERED=1
+      - ULPF_OUTPUT_DIR=/app/output
+    entrypoint: ["ulpf-dashboard"]
+    command:
+      - --output-dir
+      - /app/output
+      - --host
+      - "0.0.0.0"
+      - --port
+      - "8000"
+    restart: unless-stopped
