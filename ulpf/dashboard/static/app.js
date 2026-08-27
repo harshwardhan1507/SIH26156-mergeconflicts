@@ -207,10 +207,26 @@
           this.ticking = true;
         }
       });
+
+      // Auto-recompute on size or visibility transitions
+      if (typeof ResizeObserver !== "undefined" && this.viewport) {
+        this.resizeObserver = new ResizeObserver(() => {
+          if (this.viewport.clientHeight > 0) {
+            this.render();
+          }
+        });
+        this.resizeObserver.observe(this.viewport);
+      }
     }
 
     updateRowHeight() {
       this.rowHeight = state.viewMode === "professional" ? 38 : 46;
+    }
+
+    scrollToTop() {
+      if (this.viewport) {
+        this.viewport.scrollTop = 0;
+      }
     }
 
     render() {
@@ -232,10 +248,17 @@
         return;
       }
 
-      const scrollTop = this.viewport.scrollTop || 0;
+      let scrollTop = this.viewport.scrollTop || 0;
       const viewportHeight = this.viewport.clientHeight || 500;
 
-      const startIndex = Math.max(0, Math.floor(scrollTop / this.rowHeight) - this.buffer);
+      // Clamping guard against out-of-bounds scroll offset (e.g. after filter change or pagination)
+      const maxScroll = Math.max(0, totalHeight - viewportHeight);
+      if (scrollTop > maxScroll && maxScroll >= 0) {
+        scrollTop = maxScroll;
+        this.viewport.scrollTop = scrollTop;
+      }
+
+      const startIndex = Math.max(0, Math.min(totalRows - 1, Math.floor(scrollTop / this.rowHeight) - this.buffer));
       const endIndex = Math.min(totalRows - 1, Math.ceil((scrollTop + viewportHeight) / this.rowHeight) + this.buffer);
 
       const offsetY = startIndex * this.rowHeight;
@@ -643,8 +666,11 @@
     if (deadBadge) deadBadge.textContent = s.dead_letter_count || 0;
   }
 
-  async function fetchEvents(page = 1) {
+  async function fetchEvents(page = 1, resetScroll = true) {
     state.currentPage = page;
+    if (resetScroll && virtualScroller) {
+      virtualScroller.scrollToTop();
+    }
     const params = new URLSearchParams({
       page: state.currentPage,
       page_size: state.pageSize,
@@ -898,91 +924,148 @@
       // Render Active Connections Table
       const connsTbody = document.getElementById("hostConnectionsTableBody");
       if (connsTbody) {
-        const conns = connsRes.connections || [];
-        if (conns.length === 0) {
-          connsTbody.innerHTML = `<tr><td colspan="6" class="host-empty">No active outbound connections. Start Live Capture or open an app to inspect.</td></tr>`;
+        if (!statusRes.running) {
+          connsTbody.innerHTML = `<tr><td colspan="6" class="host-empty" style="padding: 40px 20px;"><strong style="display:block; color:var(--text-primary); font-size: 0.95rem; margin-bottom:6px;">Live Capture Inactive</strong>Click <strong>Start Live Capture</strong> above to begin collecting and streaming active process sockets.</td></tr>`;
         } else {
-          connsTbody.innerHTML = conns
-            .map((c) => {
-              const proc = escapeHtml(c.process_name || "Unknown");
-              const pid = c.pid || "-";
-              const src = `${c.src_ip}:${c.src_port}`;
-              const dst = `${c.dst_ip}:${c.dst_port}`;
-              const proto = (c.proto || "tcp").toUpperCase();
-              return `
-                <tr>
-                  <td><strong style="color: var(--text-primary);">${proc}</strong></td>
-                  <td class="mono-text" style="color: var(--text-muted);">${pid}</td>
-                  <td class="mono-text">${escapeHtml(src)}</td>
-                  <td class="mono-text" style="color: var(--accent); font-weight: 600;">${escapeHtml(dst)}</td>
-                  <td><span class="badge badge-subtle">${proto}</span></td>
-                  <td><span class="badge badge-allow">ACTIVE</span></td>
-                </tr>
-              `;
-            })
-            .join("");
+          const conns = connsRes.connections || [];
+          if (conns.length === 0) {
+            connsTbody.innerHTML = `<tr><td colspan="6" class="host-empty">No active outbound connections. Start Live Capture or open an app to inspect.</td></tr>`;
+          } else {
+            connsTbody.innerHTML = conns
+              .map((c) => {
+                const proc = escapeHtml(c.process_name || "Unknown");
+                const pid = c.pid || "-";
+                const src = `${c.src_ip}:${c.src_port}`;
+                const dst = `${c.dst_ip}:${c.dst_port}`;
+                const proto = (c.proto || "tcp").toUpperCase();
+                return `
+                  <tr>
+                    <td><strong style="color: var(--text-primary);">${proc}</strong></td>
+                    <td class="mono-text" style="color: var(--text-muted);">${pid}</td>
+                    <td class="mono-text">${escapeHtml(src)}</td>
+                    <td class="mono-text" style="color: var(--accent); font-weight: 600;">${escapeHtml(dst)}</td>
+                    <td><span class="badge badge-subtle">${proto}</span></td>
+                    <td><span class="badge badge-allow">ACTIVE</span></td>
+                  </tr>
+                `;
+              })
+              .join("");
+          }
         }
       }
 
       // Render Host Events Table
       const eventsTbody = document.getElementById("hostEventsTableBody");
       if (eventsTbody) {
-        const evs = eventsRes.events || [];
-        if (evs.length === 0) {
-          eventsTbody.innerHTML = `<tr><td colspan="5" class="host-empty">No host events captured yet. Click "Start Live Capture" to record process executions.</td></tr>`;
+        if (!statusRes.running) {
+          eventsTbody.innerHTML = `<tr><td colspan="5" class="host-empty" style="padding: 40px 20px;"><strong style="display:block; color:var(--text-primary); font-size: 0.95rem; margin-bottom:6px;">Live Capture Inactive</strong>Click <strong>Start Live Capture</strong> above to record process executions and terminations.</td></tr>`;
         } else {
-          eventsTbody.innerHTML = evs
-            .map((ev) => {
-              const ts = formatTimestamp(ev.timestamp);
-              const act = (ev.action || "event").toLowerCase();
-              let badge = `<span class="badge badge-unknown">${escapeHtml(act)}</span>`;
-              if (act.includes("start") || act.includes("launch")) badge = `<span class="badge badge-allow">Started</span>`;
-              else if (act.includes("stop") || act.includes("exit")) badge = `<span class="badge badge-deny">Exited</span>`;
-              else if (act.includes("permit") || act.includes("connect")) badge = `<span class="badge badge-allow">Connected</span>`;
-              else badge = `<span class="badge badge-cat-system">${escapeHtml(act)}</span>`;
+          const evs = eventsRes.events || [];
+          if (evs.length === 0) {
+            eventsTbody.innerHTML = `<tr><td colspan="5" class="host-empty">No host events captured yet. Monitoring is active.</td></tr>`;
+          } else {
+            eventsTbody.innerHTML = evs
+              .map((ev) => {
+                const ts = formatTimestamp(ev.timestamp);
+                const act = (ev.action || "event").toLowerCase();
+                let badge = `<span class="badge badge-unknown">${escapeHtml(act)}</span>`;
+                if (act.includes("start") || act.includes("launch")) badge = `<span class="badge badge-allow">Started</span>`;
+                else if (act.includes("stop") || act.includes("exit")) badge = `<span class="badge badge-deny">Exited</span>`;
+                else if (act.includes("permit") || act.includes("connect")) badge = `<span class="badge badge-allow">Connected</span>`;
+                else badge = `<span class="badge badge-cat-system">${escapeHtml(act)}</span>`;
 
-              const proc = escapeHtml(ev.process_name || "-");
-              const user = escapeHtml(ev.username || "-");
-              const msg = escapeHtml(ev.message || "-");
-              return `
-                <tr>
-                  <td class="mono-text" style="font-size: 0.75rem; color: var(--text-muted);">${ts}</td>
-                  <td>${badge}</td>
-                  <td><strong>${proc}</strong></td>
-                  <td style="color: var(--text-secondary);">${user}</td>
-                  <td class="mono-text" style="color: var(--text-primary); font-size: 0.78rem;">${msg}</td>
-                </tr>
-              `;
-            })
-            .join("");
+                const proc = escapeHtml(ev.process_name || "-");
+                const user = escapeHtml(ev.username || "-");
+                const msg = escapeHtml(ev.message || "-");
+                return `
+                  <tr>
+                    <td class="mono-text" style="font-size: 0.75rem; color: var(--text-muted);">${ts}</td>
+                    <td>${badge}</td>
+                    <td><strong>${proc}</strong></td>
+                    <td style="color: var(--text-secondary);">${user}</td>
+                    <td class="mono-text" style="color: var(--text-primary); font-size: 0.78rem;">${msg}</td>
+                  </tr>
+                `;
+              })
+              .join("");
+          }
         }
       }
 
       // Render Processes Snapshot Table
       const procsTbody = document.getElementById("hostProcessesTableBody");
       if (procsTbody) {
-        const procs = procsRes.processes || [];
-        if (procs.length === 0) {
-          procsTbody.innerHTML = `<tr><td colspan="3" class="host-empty">No processes returned.</td></tr>`;
+        if (!statusRes.running) {
+          procsTbody.innerHTML = `<tr><td colspan="3" class="host-empty" style="padding: 40px 20px;"><strong style="display:block; color:var(--text-primary); font-size: 0.95rem; margin-bottom:6px;">Live Capture Inactive</strong>Click <strong>Start Live Capture</strong> above to inspect running processes.</td></tr>`;
         } else {
-          procsTbody.innerHTML = procs
-            .map((p) => {
-              const pid = p.pid || "-";
-              const name = escapeHtml(p.name || "-");
-              const path = escapeHtml(p.path || "-");
-              return `
-                <tr>
-                  <td class="mono-text" style="color: var(--text-muted); width: 80px;">${pid}</td>
-                  <td><strong style="color: var(--text-primary);">${name}</strong></td>
-                  <td class="mono-text" style="font-size: 0.75rem; color: var(--text-secondary);">${path}</td>
-                </tr>
-              `;
-            })
-            .join("");
+          const procs = procsRes.processes || [];
+          if (procs.length === 0) {
+            procsTbody.innerHTML = `<tr><td colspan="3" class="host-empty">No processes returned.</td></tr>`;
+          } else {
+            procsTbody.innerHTML = procs
+              .map((p) => {
+                const pid = p.pid || "-";
+                const name = escapeHtml(p.name || "-");
+                const path = escapeHtml(p.path || "-");
+                return `
+                  <tr>
+                    <td class="mono-text" style="color: var(--text-muted); width: 80px;">${pid}</td>
+                    <td><strong style="color: var(--text-primary);">${name}</strong></td>
+                    <td class="mono-text" style="font-size: 0.75rem; color: var(--text-secondary);">${path}</td>
+                  </tr>
+                `;
+              })
+              .join("");
+          }
         }
       }
     } catch (err) {
       console.error("Failed to load live host data:", err);
+    }
+  }
+
+  function switchTab(target) {
+    state.activeTab = target;
+    if (el.proTabsBar) {
+      el.proTabsBar.querySelectorAll(".pro-tab").forEach((t) => {
+        t.classList.toggle("active", t.getAttribute("data-tab") === target);
+      });
+    }
+
+    if (el.eventsPanel) el.eventsPanel.style.display = target === "events" ? "flex" : "none";
+    if (el.deadLetterPanel) el.deadLetterPanel.style.display = target === "deadletter" ? "block" : "none";
+    if (el.parsersPanel) el.parsersPanel.style.display = target === "parsers" ? "block" : "none";
+    if (el.liveHostPanel) el.liveHostPanel.style.display = target === "livehost" ? "block" : "none";
+    if (el.filterSection) el.filterSection.style.display = target === "livehost" ? "none" : "block";
+
+    if (el.quickChips) {
+      el.quickChips.querySelectorAll(".chip").forEach((c) => {
+        const f = c.getAttribute("data-filter");
+        if (target === "livehost") {
+          c.classList.toggle("active", f === "live_host");
+        } else {
+          if (f === "live_host") {
+            c.classList.remove("active");
+          } else if (f === "all" && !state.filters.action && state.filters.severityMin === null) {
+            c.classList.add("active");
+          }
+        }
+      });
+    }
+
+    if (target === "deadletter") fetchDeadLetterRecords();
+    if (target === "parsers") fetchParsersHealth();
+    if (target === "livehost") fetchHostData();
+    if (target === "events") {
+      if (virtualScroller) {
+        virtualScroller.render();
+        requestAnimationFrame(() => {
+          virtualScroller.render();
+        });
+        setTimeout(() => {
+          if (virtualScroller) virtualScroller.render();
+        }, 50);
+      }
     }
   }
 
@@ -1168,45 +1251,6 @@
       el.copyJsonBtn.textContent = "Copied!";
       setTimeout(() => (el.copyJsonBtn.textContent = "Copy JSON"), 1500);
     });
-
-    function switchTab(target) {
-      state.activeTab = target;
-      if (el.proTabsBar) {
-        el.proTabsBar.querySelectorAll(".pro-tab").forEach((t) => {
-          t.classList.toggle("active", t.getAttribute("data-tab") === target);
-        });
-      }
-
-      if (el.eventsPanel) el.eventsPanel.style.display = target === "events" ? "block" : "none";
-      if (el.deadLetterPanel) el.deadLetterPanel.style.display = target === "deadletter" ? "block" : "none";
-      if (el.parsersPanel) el.parsersPanel.style.display = target === "parsers" ? "block" : "none";
-      if (el.liveHostPanel) el.liveHostPanel.style.display = target === "livehost" ? "block" : "none";
-      if (el.filterSection) el.filterSection.style.display = target === "livehost" ? "none" : "block";
-
-      if (el.quickChips) {
-        el.quickChips.querySelectorAll(".chip").forEach((c) => {
-          const f = c.getAttribute("data-filter");
-          if (target === "livehost") {
-            c.classList.toggle("active", f === "live_host");
-          } else {
-            if (f === "live_host") {
-              c.classList.remove("active");
-            } else if (f === "all" && !state.filters.action && state.filters.severityMin === null) {
-              c.classList.add("active");
-            }
-          }
-        });
-      }
-
-      if (target === "deadletter") fetchDeadLetterRecords();
-      if (target === "parsers") fetchParsersHealth();
-      if (target === "livehost") fetchHostData();
-      if (target === "events") {
-        if (virtualScroller) {
-          virtualScroller.render();
-        }
-      }
-    }
 
     // Quick filter chips
     if (el.quickChips) {

@@ -688,6 +688,7 @@ body.resizing {
   border-bottom: 1px solid var(--border-subtle);
   font-size: 0.78rem;
   color: var(--text-muted);
+  flex-shrink: 0;
 }
 
 .table-toolbar-actions {
@@ -725,7 +726,8 @@ body.resizing {
 
 /* Table Horizontal Scroll Wrapper */
 .table-scroll-wrapper {
-  flex: 1 1 auto;
+  flex: 1 1 0;
+  min-height: 0;
   overflow-x: auto;
   overflow-y: hidden;
   display: flex;
@@ -748,6 +750,7 @@ body.resizing {
   align-items: center;
   user-select: none;
   min-width: var(--table-min-width);
+  flex-shrink: 0;
 }
 
 .table-header-col {
@@ -810,13 +813,36 @@ body.resizing {
 
 /* Virtual Scroll Viewport */
 .virtual-viewport {
-  flex: 1 1 auto;
-  overflow-y: auto;
+  flex: 1 1 0;
+  min-height: 0;
+  overflow-y: scroll; /* always keep scrollbar track stable so it never vanishes */
   overflow-x: hidden;
   position: relative;
   height: 100%;
-  min-height: 420px;
   min-width: var(--table-min-width);
+  scrollbar-gutter: stable;
+  scrollbar-width: thin;
+  scrollbar-color: var(--border-medium) var(--bg-surface-subtle);
+}
+
+.virtual-viewport::-webkit-scrollbar {
+  width: 9px;
+  height: 9px;
+}
+
+.virtual-viewport::-webkit-scrollbar-track {
+  background: var(--bg-surface-subtle);
+  border-left: 1px solid var(--border-subtle);
+}
+
+.virtual-viewport::-webkit-scrollbar-thumb {
+  background: var(--border-medium);
+  border-radius: var(--radius-sm);
+  border: 2px solid var(--bg-surface-subtle);
+}
+
+.virtual-viewport::-webkit-scrollbar-thumb:hover {
+  background: var(--accent);
 }
 
 .virtual-spacer {
@@ -988,6 +1014,7 @@ body.resizing {
   border-top: 1px solid var(--border-medium);
   font-size: 0.84rem;
   color: var(--text-secondary);
+  flex-shrink: 0;
 }
 
 .pagination-controls {

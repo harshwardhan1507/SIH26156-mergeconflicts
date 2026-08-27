@@ -528,28 +528,27 @@ def create_app(output_dir: str | Path | None = None) -> FastAPI:
 
     @app.get("/api/live-monitor/events")
     async def get_live_monitor_events(limit: int = 100):
-        """Get recent captured live host events from memory buffer."""
+        """Get recent captured live host events from memory buffer (only when active)."""
         if "live_monitor" in STATE and STATE["live_monitor"] is not None:
-            return {"events": STATE["live_monitor"].get_recent_events(limit=limit)}
+            if STATE["live_monitor"].is_running():
+                return {"events": STATE["live_monitor"].get_recent_events(limit=limit)}
         return {"events": []}
 
     @app.get("/api/live-monitor/connections")
     async def get_live_monitor_connections():
-        """Get currently active process outbound network connections."""
+        """Get currently active process outbound network connections (only when monitor is active)."""
         if "live_monitor" in STATE and STATE["live_monitor"] is not None:
-            return {"connections": STATE["live_monitor"].get_active_connections()}
-        from ulpf.collectors.live_monitor import LiveSystemMonitor
-        temp_mon = LiveSystemMonitor()
-        return {"connections": temp_mon.get_active_connections()}
+            if STATE["live_monitor"].is_running():
+                return {"connections": STATE["live_monitor"].get_active_connections()}
+        return {"connections": []}
 
     @app.get("/api/live-monitor/processes")
     async def get_live_monitor_processes(limit: int = 150):
-        """Get snapshot of active running processes."""
+        """Get snapshot of active running processes (only when monitor is active)."""
         if "live_monitor" in STATE and STATE["live_monitor"] is not None:
-            return {"processes": STATE["live_monitor"].get_running_processes(limit=limit)}
-        from ulpf.collectors.live_monitor import LiveSystemMonitor
-        temp_mon = LiveSystemMonitor()
-        return {"processes": temp_mon.get_running_processes(limit=limit)}
+            if STATE["live_monitor"].is_running():
+                return {"processes": STATE["live_monitor"].get_running_processes(limit=limit)}
+        return {"processes": []}
 
 
     # ------------------------------------------------------------------

@@ -46,51 +46,78 @@ coverage beyond perimeter devices to enterprise operating systems and multi-clou
     - Palo Alto Networks Traffic CSV (35+ columns)
     - Syslog RFC 5424 (ID47 structured data)
     - Syslog RFC 3164 (BSD syslog with auto year injection)
-    - Generic JSON Passthrough
+    - Generic JSON Passthrough (MySQL Audit, Databases, Applications)
 
 
-3. SAMPLE DATA & BASELINE EVENT CORPUS
+3. 1-CLICK TEST RUNNER & SYSTEM AUDIT (test_all.py / Run_Tests.bat)
 --------------------------------------------------------------------------------
-  * Created complete, realistic sample logs for all 11 format parsers in
-    both sample_logs/ and ulpf/sample_logs/.
-  * Ingested baseline corpus into output/events.ndjson (102 total normalized events).
-  * Rebuilt SQLite index cache (output/dashboard_index.db) — 0 dead-letter issues
-    (100% schema conformance rate).
+  * Master 1-Click Verification Script (test_all.py):
+    Standalone test runner validating 59 automated assertions across:
+    - VPN & Remote Tunnels (LEEF IPSec, Cisco ASA SSL-VPN, OpenVPN JSON)
+    - Cloud Infrastructure (AWS CloudTrail, Azure Monitor, GCP Cloud Audit)
+    - Database Systems (MySQL Audit, MySQL Syslog, MySQL CEF, DB auth brute-force)
+    - Operating Systems & Windows (EVTX XML EventIDs 4624, 4625, 1102)
+    - Forensic Raw Store & SHA-256 Cryptographic Checksum Matching
+    - Live Host Telemetry & Socket Path Tracking (Process -> Src:Port -> Dst:Port)
+    - Statistical Anomaly Engine (Z-Score > 3σ, Rate Bursts > 3x)
+    - Streaming Ingestion (NDJSON bulk) & Data Exporters (CSV / NDJSON)
+    - Pytest Unit Test Suite (124 / 124 passed, 100% green)
+
+  * 1-Click Batch Launchers & Desktop Shortcuts:
+    - Run_Tests.bat: Auto-discovers Python, launches background backend if offline,
+      executes all 59 tests, and outputs a formatted scorecard.
+    - Run_Dashboard.bat: Auto-launches the browser and runs the FastAPI server.
+    - Desktop Shortcuts automatically placed on the User Desktop.
 
 
-4. DEDICATED LIVE HOST & PROCESS MONITOR
+4. LIVE HOST MONITOR STRICT OPT-IN ENFORCEMENT
 --------------------------------------------------------------------------------
-  * Sub-second 250ms polling engine for local process executions and outbound sockets.
-  * Active socket tracking with complete 5-tuple: Process -> Source IP:Port -> Destination IP:Port [Protocol].
-  * Complete buffer isolation: Live host events stay in an isolated 250-item in-memory
-    ring buffer and never contaminate the perimeter SIEM events grid or events.ndjson.
-  * Default state is OFF (opt-in capture toggle).
+  * Sockets, connections, and processes are only scanned and collected when the user
+    explicitly clicks "Start Live Capture".
+  * Stopped / Inactive state strictly returns 0 sockets and 0 process scans, displaying
+    a clean inactive status banner in the dashboard.
+  * Live host events remain 100% isolated in memory and never contaminate the
+    perimeter SIEM index or events.ndjson log files.
 
 
-5. UI ERGONOMICS & NAVIGATION ENHANCEMENTS
+5. UI ERGONOMICS, PERSISTENT SCROLLBARS & FLEX LAYOUT INTEGRITY
 --------------------------------------------------------------------------------
-  * Added prominent "<- Back to Events Grid" button in the Live Host Monitor toolbar.
-  * Enabled global top navigation tabs bar across both Default View and Professional View.
-  * Synchronized quick filter chips (All Events, Blocked/Denied, High Severity) with tab state.
-  * Refreshed high-resolution PNG screenshots in docs/screenshots/ (Default view,
-    Professional view, Traceability Split Inspector, and Live Host Monitor).
+  * Fixed Flexbox column collapse during tab navigation:
+    - switchTab() strictly maintains display: flex on eventsPanel.
+    - Added min-height: 0 and flex: 1 1 0 on scroll wrappers to prevent unconstrained
+      overflow clipping.
+    - Added flex-shrink: 0 to toolbar, header, and pagination footer.
+  * Added permanent custom scrollbar rules (overflow-y: scroll, scrollbar-gutter: stable,
+    and -webkit-scrollbar) ensuring scrollbars never vanish across Chrome, Edge, and Firefox.
+  * Added ResizeObserver to automatically re-compute virtual table heights on resize or
+    tab visibility changes.
+  * Clamped virtual scroll offset (maxScroll) and added automatic scrollToTop() on page
+    changes and filter modifications.
+  * Added "<- Back to Events Grid" button in the Live Host toolbar.
 
 
-6. TERMINOLOGY AUDIT & AIR-GAP COMPLIANCE
+6. DATABASE & PORT-BASED SEARCH CAPABILITY
 --------------------------------------------------------------------------------
-  * Scanned and cleaned all robotic phrasing, synthetic placeholders, and buzzwords
-    across docstrings, documentation, schemas, and UI elements.
-  * Standardized on pure software engineering terminology (Statistical Anomaly Engine,
-    Z-Score Profiling, Security Analytics Pipeline).
-  * 100% air-gap verified: 0 external CDN links, embedded offline CIDR threat lists,
-    multi-stage Docker build installing from pre-downloaded wheels (--no-index).
+  * Enhanced SQLite indexer search query with CAST(src_port AS TEXT) and
+    CAST(dst_port AS TEXT) to allow direct full-text querying for database and service
+    ports (e.g. 3306 MySQL, 5432 Postgres, 443 HTTPS, 22 SSH, 500 IPSec).
 
 
-7. AUTOMATED VERIFICATION & QUALITY ASSURANCE
+7. SCREENSHOTS & DOCUMENTATION REFRESH
+--------------------------------------------------------------------------------
+  * Regenerated high-resolution PNG screenshots in docs/screenshots/:
+    - docs/screenshots/dashboard-default.png
+    - docs/screenshots/dashboard-professional.png
+    - docs/screenshots/dashboard-inspector.png
+    - docs/screenshots/dashboard-livehost.png
+    - docs/screenshots/dashboard-fixed-scroll.png
+    - docs/architecture-diagram.svg
+
+
+8. QUALITY ASSURANCE METRICS
 --------------------------------------------------------------------------------
   * Pytest Unit & Integration Suite: 124 / 124 passed (100% green).
-  * End-to-End Verification Suite: 143 / 143 automated checks passed (0 warnings, 0 failures).
-  * Formats tested: Cisco ASA, Palo Alto CSV, CEF, LEEF, Windows XML, Syslog,
-    AWS CloudTrail, Azure Monitor, GCP Audit, JSON, and VPN sessions.
+  * Master System Verification Suite (test_all.py): 59 / 59 passed (100% green).
+  * Dead-Letter Quarantine Count: 0 issues across 219 normalized events (100% conformance).
 
 ================================================================================

@@ -324,6 +324,10 @@ def main():
         record("livehost", "Live Host Monitor status API active", "running" in st)
         record("livehost", "Default state is OFF (Opt-in toggle)", st.get("running") == False)
 
+        # Verify inactive state returns 0 sockets before user clicks start
+        pre_conns = _get("/api/live-monitor/connections").get("connections", [])
+        record("livehost", "Inactive state: 0 sockets returned before user starts capture", len(pre_conns) == 0)
+
         # Start live capture
         start_res = _post("/api/live-monitor/start")
         record("livehost", "POST /api/live-monitor/start activates sub-second collector",

@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 -10 48 58" width="100%" height="100%">
+  <defs>
+    <linearGradient id="ulpfGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#0d9488" />
+      <stop offset="100%" stop-color="#0891b2" />
+    </linearGradient>
+  </defs>
+  <!-- Rounded Base Badge -->
+  <rect x="2" y="2" width="44" height="44" rx="10" fill="url(#ulpfGrad)"/>
+  <!-- Inner Border Accent -->
+  <rect x="3" y="3" width="42" height="42" rx="9" fill="none" stroke="rgba(255,255,255,0.3)" stroke-width="1.5"/>
+  <!-- Telemetry / Shield / U Symbol -->
+  <path d="M15 14v12a9 9 0 0 0 18 0V14" fill="none" stroke="#ffffff" stroke-width="4.5" stroke-linecap="round" stroke-linejoin="round"/>
+  <!-- Active Pulse Center Node -->
+  <circle cx="24" cy="26" r="3" fill="#ffffff"/>
+  <circle cx="24" cy="26" r="1.4" fill="#0d9488"/>
+  <!-- Corner Tech Nodes -->
+  <circle cx="15" cy="14" r="2.2" fill="#ffffff"/>
+  <circle cx="33" cy="14" r="2.2" fill="#ffffff"/>
+</svg>
