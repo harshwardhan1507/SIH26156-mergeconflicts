@@ -84,11 +84,13 @@ class Pipeline:
             },
         }
 
-    def process_event(self, raw_line: str, source_tag: str, ingest_ts: datetime) -> bool:
+    def process_event(self, raw_line: str, source_tag: str, ingest_ts: datetime | None = None) -> bool:
         """
         Process a single raw event through the full pipeline.
         Returns True if successfully written to a sink, False otherwise.
         """
+        if ingest_ts is None:
+            ingest_ts = datetime.now(timezone.utc)
         event_id = str(uuid.uuid4())
 
         # 1. Detect format

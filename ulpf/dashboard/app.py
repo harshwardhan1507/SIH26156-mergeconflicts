@@ -492,6 +492,20 @@ def create_app(output_dir: str | Path | None = None) -> FastAPI:
 app = create_app()
 
 
+def _find_sample_logs_dir() -> Path | None:
+    """Find bundled or repository sample_logs directory."""
+    candidates = [
+        Path(__file__).parent.parent / "sample_logs",
+        Path(__file__).parent.parent.parent / "sample_logs",
+        Path.cwd() / "ulpf" / "sample_logs",
+        Path.cwd() / "sample_logs",
+    ]
+    for c in candidates:
+        if c.exists() and any(c.glob("*.*")):
+            return c
+    return None
+
+
 @click.command("ulpf-dashboard")
 @click.option(
     "--output-dir",
@@ -503,10 +517,59 @@ app = create_app()
 @click.option("--host", "-h", default="127.0.0.1", help="Bind host address.")
 @click.option("--port", "-p", default=8000, type=int, help="Bind port number.")
 @click.option("--reload", is_flag=True, default=False, help="Enable auto-reload.")
-def main(output_dir: str | None, host: str, port: int, reload: bool) -> None:
+@click.option("--open-browser/--no-open-browser", default=True, help="Automatically open browser.")
+def main(output_dir: str | None, host: str, port: int, reload: bool, open_browser: bool) -> None:
     """Launch the ULPF Operations Dashboard."""
+    import threading
+    import webbrowser
+
     resolved = _resolve_output_dir(output_dir)
-    click.echo(f"Starting ULPF Dashboard on http://{host}:{port} [output={resolved}]")
+
+    # If events.ndjson is missing or empty, auto-ingest sample logs for turnkey experience
+    events_file = resolved / "events.ndjson"
+    if not events_file.exists() or events_file.stat().st_size == 0:
+        sample_dir = _find_sample_logs_dir()
+        if sample_dir:
+            click.echo(f"[*] Initializing sample logs from {sample_dir} into {resolved}...")
+            try:
+                from ulpf.cli import ingest as cli_ingest
+                from click.testing import CliRunner
+                # Direct mini-ingest pipeline
+                app_inst = create_app(output_dir=resolved)
+                pipeline, sinks, validator = STATE["indexer"].output_dir, None, None
+                # Run CLI ingest directly
+                from ulpf.core.ingestion import FileReader
+                from ulpf.cli import _build_pipeline, _find_schema_dir, _find_config_dir
+                p, s, v = _build_pipeline(
+                    output=resolved,
+                    schema_dir=_find_schema_dir(),
+                    cfg=_find_config_dir() / "sources.yaml",
+                    sink_type="ndjson",
+                    enrich=True,
+                )
+                reader = FileReader(str(sample_dir))
+                p.run(reader)
+                v.close()
+                for snk in s:
+                    snk.close()
+                click.echo(f"[+] Successfully loaded sample logs into {resolved}")
+            except Exception as e:
+                click.echo(f"[!] Note: Sample log bootstrap skipped ({e})")
+
+    url = f"http://{host}:{port}"
+    click.echo(f"============================================================")
+    click.echo(f"  ULPF Operations Dashboard running at: {url}")
+    click.echo(f"  Connected Output Directory: {resolved.resolve()}")
+    click.echo(f"  Press Ctrl+C to stop the dashboard server.")
+    click.echo(f"============================================================")
+
+    if open_browser:
+        def _launch_browser():
+            import time
+            time.sleep(1.0)
+            webbrowser.open(url)
+        threading.Thread(target=_launch_browser, daemon=True).start()
+
     app_instance = create_app(output_dir=resolved)
     uvicorn.run(app_instance, host=host, port=port, reload=reload)
 

@@ -34,18 +34,14 @@ from ulpf.sinks.ndjson_file import NDJSONFileSink
 
 
 def _find_schema_dir() -> Path:
-    """Locate the schemas directory across package, workspace, PyInstaller, and container paths."""
-    candidates = []
-    if hasattr(sys, '_MEIPASS'):
-        candidates.append(Path(sys._MEIPASS) / 'ulpf' / 'schemas')
-        candidates.append(Path(sys._MEIPASS) / 'schemas')
-    candidates.extend([
+    """Locate the schemas directory across package, workspace, and container paths."""
+    candidates = [
         Path(__file__).parent / 'schemas',
         Path.cwd() / 'ulpf' / 'schemas',
         Path.cwd() / 'schemas',
         Path('/app/ulpf/schemas'),
         Path('/app/schemas'),
-    ])
+    ]
     for c in candidates:
         if c.exists() and (c / 'ues_schema.json').exists():
             return c
@@ -53,18 +49,14 @@ def _find_schema_dir() -> Path:
 
 
 def _find_config_dir() -> Path:
-    """Locate the config directory across package, workspace, PyInstaller, and container paths."""
-    candidates = []
-    if hasattr(sys, '_MEIPASS'):
-        candidates.append(Path(sys._MEIPASS) / 'ulpf' / 'config')
-        candidates.append(Path(sys._MEIPASS) / 'config')
-    candidates.extend([
+    """Locate the config directory across package, workspace, and container paths."""
+    candidates = [
         Path(__file__).parent / 'config',
         Path.cwd() / 'ulpf' / 'config',
         Path.cwd() / 'config',
         Path('/app/ulpf/config'),
         Path('/app/config'),
-    ])
+    ]
     for c in candidates:
         if c.exists():
             return c
@@ -237,20 +229,147 @@ def list_parsers() -> None:
             click.echo(f'  - {name}')
 
 
+def _find_sample_logs_dir() -> Path | None:
+    """Find bundled or repository sample_logs directory."""
+    candidates = []
+    if hasattr(sys, "_MEIPASS"):
+        candidates.append(Path(sys._MEIPASS) / "ulpf" / "sample_logs")
+        candidates.append(Path(sys._MEIPASS) / "sample_logs")
+    candidates.extend([
+        Path(__file__).parent / "sample_logs",
+        Path(__file__).parent.parent / "sample_logs",
+        Path.cwd() / "ulpf" / "sample_logs",
+        Path.cwd() / "sample_logs",
+    ])
+    for c in candidates:
+        if c.exists() and any(c.glob("*.*")):
+            return c
+    return None
+
+
 @main.command('dashboard')
 @click.option('--output-dir', '-o', default='output', help='Path to pipeline output directory.')
 @click.option('--port', '-p', default=8000, type=int, help='Port to bind the dashboard server.')
 @click.option('--host', default='127.0.0.1', help='Host interface to bind.')
-def dashboard_cmd(output_dir: str, port: int, host: str) -> None:
+@click.option('--open-browser/--no-open-browser', default=True, help='Automatically open dashboard in default browser.')
+def dashboard_cmd(output_dir: str, port: int, host: str, open_browser: bool) -> None:
     """Launch the interactive local web operations dashboard."""
+    import threading
+    import webbrowser
     import uvicorn
-    from ulpf.dashboard.app import create_app
+    from ulpf.dashboard.app import create_app, _resolve_output_dir
 
-    click.echo(f'Starting ULPF Operations Dashboard at http://{host}:{port}')
-    click.echo(f'Connecting to pipeline output directory: {output_dir}')
-    app = create_app(output_dir)
+    resolved = _resolve_output_dir(output_dir)
+    events_file = resolved / "events.ndjson"
+    if not events_file.exists() or events_file.stat().st_size == 0:
+        sample_dir = _find_sample_logs_dir()
+        if sample_dir:
+            click.echo(f"[*] Initializing sample logs from {sample_dir} into {resolved}...")
+            try:
+                p, s, v = _build_pipeline(
+                    output=resolved,
+                    schema_dir=_find_schema_dir(),
+                    cfg=_find_config_dir() / "sources.yaml",
+                    sink_type="ndjson",
+                    enrich=True,
+                )
+                reader = FileReader(str(sample_dir))
+                p.run(reader)
+                v.close()
+                for snk in s:
+                    snk.close()
+                click.echo(f"[+] Successfully loaded sample logs into {resolved}")
+            except Exception as e:
+                click.echo(f"[!] Note: Sample log bootstrap skipped ({e})")
+
+    url = f"http://{host}:{port}"
+    click.echo(f"============================================================")
+    click.echo(f"  ULPF Operations Dashboard running at: {url}")
+    click.echo(f"  Connected Output Directory: {resolved.resolve()}")
+    click.echo(f"  Press Ctrl+C to stop the dashboard server.")
+    click.echo(f"============================================================")
+
+    if open_browser:
+        def _launch_browser():
+            import time
+            time.sleep(1.0)
+            webbrowser.open(url)
+        threading.Thread(target=_launch_browser, daemon=True).start()
+
+    app = create_app(resolved)
     uvicorn.run(app, host=host, port=port, log_level='info')
 
 
+def interactive_menu() -> None:
+    """Interactive console menu for double-click launch or bare invocation."""
+    while True:
+        click.echo("")
+        click.echo("======================================================================")
+        click.echo("       Universal Log Pre-processing Framework (ULPF) v1.1.0")
+        click.echo("======================================================================")
+        click.echo("  [1] Launch Operations Dashboard (Web UI on http://127.0.0.1:8000)")
+        click.echo("  [2] Ingest Sample Logs into output/")
+        click.echo("  [3] Run Anomaly Detection on output/events.ndjson")
+        click.echo("  [4] List Registered Parser Plugins")
+        click.echo("  [5] Show CLI Command Help")
+        click.echo("  [0] Exit")
+        click.echo("======================================================================")
+        try:
+            choice = click.prompt("Enter choice [0-5]", default="1")
+        except (KeyboardInterrupt, EOFError):
+            break
+
+        if choice == "1":
+            try:
+                dashboard_cmd.callback(output_dir="output", port=8000, host="127.0.0.1", open_browser=True)
+            except KeyboardInterrupt:
+                click.echo("\nDashboard stopped.")
+                click.pause("Press any key to return to menu...")
+        elif choice == "2":
+            sample_dir = _find_sample_logs_dir()
+            if sample_dir:
+                try:
+                    ingest.callback(
+                        input_path=str(sample_dir),
+                        sink_type="ndjson",
+                        output_dir="output",
+                        config_path=None,
+                        workers=1,
+                        no_enrich=False,
+                    )
+                except Exception as e:
+                    click.echo(f"Error during ingestion: {e}")
+            else:
+                click.echo("Sample logs directory not found.")
+            click.pause("\nPress any key to return to menu...")
+        elif choice == "3":
+            try:
+                analyze.callback(
+                    input_path="output/events.ndjson",
+                    output_path="output/anomalies.ndjson",
+                    output_dir="output",
+                )
+            except Exception as e:
+                click.echo(f"Error during analysis: {e}")
+            click.pause("\nPress any key to return to menu...")
+        elif choice == "4":
+            list_parsers.callback()
+            click.pause("\nPress any key to return to menu...")
+        elif choice == "5":
+            with click.Context(main) as ctx:
+                click.echo(main.get_help(ctx))
+            click.pause("\nPress any key to return to menu...")
+        elif choice in ("0", "q", "exit"):
+            break
+
+
+def entry_point() -> None:
+    """Main entry point supporting both CLI invocation and interactive double-click."""
+    if len(sys.argv) == 1 and sys.stdin and sys.stdin.isatty():
+        interactive_menu()
+    else:
+        main()
+
+
 if __name__ == '__main__':
-    main()
+    entry_point()
