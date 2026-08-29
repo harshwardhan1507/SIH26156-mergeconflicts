@@ -1,4 +1,4 @@
-# Demo script (~2 min)
+# <img src="ulpf-icon.svg" width="28" height="28" alt="ULPF" /> ULPF Demo Script (~2 min)
 
 Commands run from the project root. `ulpf` CLI must be installed (`pip install -e .[dev]`).
 Timings are approximate cut points for recording, not hard pauses.

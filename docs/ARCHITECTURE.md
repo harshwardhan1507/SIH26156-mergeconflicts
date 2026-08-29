@@ -1,4 +1,4 @@
-# ULPF Architecture (UES v1.2.0)
+# <img src="ulpf-icon.svg" width="28" height="28" alt="ULPF" /> ULPF Architecture (UES v1.2.0)
 
 ULPF converts heterogeneous perimeter-device logs (syslog, CEF, LEEF, XML,
 vendor CSV, cloud-provider JSON) into a single lossless, analytics-ready

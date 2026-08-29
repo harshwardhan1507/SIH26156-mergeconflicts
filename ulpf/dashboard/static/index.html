@@ -4,13 +4,16 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>ULPF — Universal Log Operations Dashboard</title>
+  <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
+  <link rel="alternate icon" href="/static/favicon.ico">
   <link rel="stylesheet" href="/static/style.css">
+</head>
 <body>
   <!-- Full Screen Initial Loading / Splash Screen (0% to 100%) -->
   <div id="loadingScreen" class="loading-screen">
     <div class="loading-container">
       <div class="loading-logo-box">
-        <div class="loading-logo-glyph">U</div>
+        <img src="/static/ulpf-logo.svg" alt="ULPF Logo" style="width: 56px; height: 56px; display: block; border-radius: 14px; box-shadow: 0 4px 14px rgba(6,182,212,0.35);">
         <div class="loading-ring"></div>
       </div>
       <div class="loading-app-name">ULPF Operations Center</div>
@@ -33,7 +36,9 @@
     <!-- Top Application Header -->
     <header class="app-header">
       <div class="brand-section">
-        <div class="brand-logo">U</div>
+        <div class="brand-logo" style="padding: 0; overflow: hidden; background: transparent;">
+          <img src="/static/ulpf-logo.svg" alt="ULPF" style="width: 34px; height: 34px; border-radius: 8px; display: block;">
+        </div>
         <div class="brand-titles">
           <h1>ULPF Operations Center</h1>
           <div class="brand-subtitle">Universal Log Pre-processing Framework</div>

@@ -22,14 +22,11 @@ if %ERRORLEVEL% NEQ 0 (
 if exist "output\events.ndjson" (
     echo [INFO] Ingested events detected in output directory.
 ) else (
-    echo [INFO] Ingesting initial baseline sample logs...
-    !PYTHON_EXE! -m ulpf.cli ingest --input sample_logs --output output
+    echo [INFO] Ingesting initial baseline sample logs from ulpf/sample_logs...
+    !PYTHON_EXE! -m ulpf.cli ingest --input ulpf/sample_logs --output output
 )
 
-echo [INFO] Opening web browser at http://127.0.0.1:8000 ...
-start http://127.0.0.1:8000
-
-echo [INFO] Starting FastAPI server on port 8000...
+echo [INFO] Starting ULPF Operations Dashboard...
 !PYTHON_EXE! -m ulpf.cli dashboard --port 8000 --output-dir output
 
 pause

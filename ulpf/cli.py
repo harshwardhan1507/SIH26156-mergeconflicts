@@ -456,6 +456,30 @@ def dashboard_cmd(output_dir: str, port: int, host: str, open_browser: bool) -> 
             except Exception as e:
                 click.echo(f"[!] Note: Sample log bootstrap skipped ({e})")
 
+    from ulpf.dashboard.app import _is_ulpf_running, _find_available_port
+
+    # 1. Check if ULPF dashboard is already running on this port
+    if _is_ulpf_running(host, port):
+        url = f"http://{host}:{port}"
+        click.echo(f"============================================================")
+        click.echo(f"  [+] ULPF Operations Dashboard is ALREADY running at: {url}")
+        click.echo(f"  Connected Output Directory: {resolved.resolve()}")
+        click.echo(f"  Opened active dashboard in your browser!")
+        click.echo(f"============================================================")
+        if open_browser:
+            webbrowser.open(url)
+        return
+
+    # 2. Check if port is occupied by another process, switch to open port automatically
+    import socket
+    original_port = port
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        try:
+            s.bind((host, port))
+        except OSError:
+            port = _find_available_port(host, start_port=port + 1)
+            click.echo(f"[*] Port {original_port} is in use. Switched to available port: {port}")
+
     url = f"http://{host}:{port}"
     click.echo(f"============================================================")
     click.echo(f"  ULPF Operations Dashboard running at: {url}")

@@ -165,11 +165,15 @@ class LiveSystemMonitor:
         """Fallback process scan for Linux/macOS."""
         current_procs: dict[int, dict[str, Any]] = {}
         try:
+            extra_kwargs: dict[str, Any] = {}
+            if sys.platform == "win32":
+                extra_kwargs["creationflags"] = getattr(subprocess, "CREATE_NO_WINDOW", 0x08000000)
             res = subprocess.run(
                 ["ps", "-eo", "pid,ppid,comm"],
                 capture_output=True,
                 text=True,
                 timeout=1,
+                **extra_kwargs,
             )
             if res.returncode == 0:
                 for line in res.stdout.strip().split("\n")[1:]:
@@ -330,13 +334,30 @@ class LiveSystemMonitor:
         return xml_str
 
     def _poll_windows_event_logs(self, now: datetime.datetime):
-        """Poll recent Windows Application and System logs via wevtutil."""
+        """Poll recent Windows Application and System logs via wevtutil silently without console popups."""
         if not self.is_windows:
             return
+        extra_kwargs: dict[str, Any] = {}
+        if sys.platform == "win32":
+            extra_kwargs["creationflags"] = getattr(subprocess, "CREATE_NO_WINDOW", 0x08000000)
+            try:
+                si = subprocess.STARTUPINFO()
+                si.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+                si.wShowWindow = 0  # SW_HIDE
+                extra_kwargs["startupinfo"] = si
+            except Exception:
+                pass
+
         try:
             for channel in ["Application", "System"]:
                 cmd = ["wevtutil.exe", "qe", channel, "/c:3", "/rd:true", "/f:xml"]
-                res = subprocess.run(cmd, capture_output=True, text=True, timeout=1.5)
+                res = subprocess.run(
+                    cmd,
+                    capture_output=True,
+                    text=True,
+                    timeout=1.5,
+                    **extra_kwargs,
+                )
                 if res.returncode == 0 and res.stdout.strip():
                     raw_xmls = re.findall(r"<Event\s+xmlns=.*?</Event>", res.stdout, re.DOTALL)
                     for x in raw_xmls:

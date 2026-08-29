@@ -1,0 +1,13 @@
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=ULPF Operations Dashboard
+GenericName=Log Pre-processing & Operations Dashboard
+Comment=Universal Log Pre-processing Framework by NotUrNio
+Exec=ulpf dashboard --port 8000
+Icon=ulpf
+Terminal=false
+Categories=Development;Security;System;Utility;
+Keywords=logs;security;siem;forensics;telemetry;analyzer;
+StartupNotify=true
+StartupWMClass=ULPF Dashboard

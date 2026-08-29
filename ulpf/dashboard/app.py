@@ -79,14 +79,38 @@ STATE: dict[str, Any] = {
 }
 
 
+def _get_user_data_dir() -> Path:
+    """Get a user-writable application data directory across OS platforms."""
+    if sys.platform == "win32":
+        local_app_data = os.environ.get("LOCALAPPDATA")
+        if local_app_data:
+            return Path(local_app_data) / "ULPF" / "output"
+        return Path.home() / ".ulpf" / "output"
+    elif sys.platform == "darwin":
+        return Path.home() / "Library" / "Application Support" / "ULPF" / "output"
+    return Path.home() / ".local" / "share" / "ulpf" / "output"
+
+
 def _resolve_output_dir(configured_dir: str | Path | None = None) -> Path:
-    """Find valid output directory, falling back to candidate paths."""
+    """Find valid output directory, falling back to candidate paths and user data dir."""
     if configured_dir:
         p = Path(configured_dir)
-        if p.exists():
+        try:
+            p.mkdir(parents=True, exist_ok=True)
             return p
+        except (PermissionError, OSError):
+            pass
+
+    env_dir = os.environ.get("ULPF_OUTPUT_DIR", "").strip()
+    if env_dir:
+        p = Path(env_dir)
+        try:
+            p.mkdir(parents=True, exist_ok=True)
+            return p
+        except (PermissionError, OSError):
+            pass
+
     candidates = [
-        Path(os.environ.get("ULPF_OUTPUT_DIR", "")),
         Path("output"),
         Path("output_demo"),
         Path("output_verify"),
@@ -94,12 +118,26 @@ def _resolve_output_dir(configured_dir: str | Path | None = None) -> Path:
         Path("/app/output"),
     ]
     for c in candidates:
-        if str(c) and c.exists() and (c / "events.ndjson").exists():
-            return c
-    # Default fallback
-    p = Path(configured_dir or "output")
-    p.mkdir(parents=True, exist_ok=True)
-    return p
+        try:
+            if str(c) and c.exists() and (c / "events.ndjson").exists():
+                return c
+        except Exception:
+            pass
+
+    # Try default relative output directory
+    try:
+        p = Path(configured_dir or "output")
+        p.mkdir(parents=True, exist_ok=True)
+        # Test write permission
+        test_file = p / ".write_test"
+        test_file.touch()
+        test_file.unlink()
+        return p
+    except (PermissionError, OSError):
+        # Fallback to user-writable profile directory
+        user_dir = _get_user_data_dir()
+        user_dir.mkdir(parents=True, exist_ok=True)
+        return user_dir
 
 
 @asynccontextmanager
@@ -627,6 +665,31 @@ def _find_sample_logs_dir() -> Path | None:
     return None
 
 
+def _is_ulpf_running(host: str, port: int) -> bool:
+    """Check if an instance of ULPF dashboard is already listening and responsive."""
+    import urllib.request
+    try:
+        url = f"http://{host}:{port}/api/stats"
+        req = urllib.request.Request(url, headers={"User-Agent": "ULPF-Launcher"})
+        with urllib.request.urlopen(req, timeout=1.0) as resp:
+            return resp.status == 200
+    except Exception:
+        return False
+
+
+def _find_available_port(host: str, start_port: int = 8000, max_attempts: int = 50) -> int:
+    """Find the first open TCP port starting from start_port."""
+    import socket
+    for p in range(start_port, start_port + max_attempts):
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            try:
+                s.bind((host, p))
+                return p
+            except OSError:
+                continue
+    return start_port
+
+
 @click.command("ulpf-dashboard")
 @click.option(
     "--output-dir",
@@ -670,6 +733,28 @@ def main(output_dir: str | None, host: str, port: int, reload: bool, open_browse
                 click.echo(f"[+] Successfully loaded sample logs into {resolved}")
             except Exception as e:
                 click.echo(f"[!] Note: Sample log bootstrap skipped ({e})")
+
+    # 1. Check if ULPF dashboard is already running on this port
+    if _is_ulpf_running(host, port):
+        url = f"http://{host}:{port}"
+        click.echo(f"============================================================")
+        click.echo(f"  [+] ULPF Operations Dashboard is ALREADY running at: {url}")
+        click.echo(f"  Connected Output Directory: {resolved.resolve()}")
+        click.echo(f"  Opened active dashboard in your browser!")
+        click.echo(f"============================================================")
+        if open_browser:
+            webbrowser.open(url)
+        return
+
+    # 2. Check if port is occupied by another process, switch to open port automatically
+    import socket
+    original_port = port
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        try:
+            s.bind((host, port))
+        except OSError:
+            port = _find_available_port(host, start_port=port + 1)
+            click.echo(f"[*] Port {original_port} is in use. Switched to available port: {port}")
 
     url = f"http://{host}:{port}"
     click.echo(f"============================================================")

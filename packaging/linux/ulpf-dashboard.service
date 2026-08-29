@@ -1,0 +1,14 @@
+[Unit]
+Description=ULPF Operations Dashboard
+After=network.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/var/lib/ulpf
+ExecStart=/usr/local/bin/ulpf dashboard --port 8000 --output-dir /var/lib/ulpf/output
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

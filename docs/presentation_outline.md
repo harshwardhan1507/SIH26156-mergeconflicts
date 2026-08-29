@@ -1,4 +1,4 @@
-# Technical presentation (5 slides)
+# <img src="ulpf-icon.svg" width="28" height="28" alt="ULPF" /> ULPF Presentation Outline (5 Slides)
 
 ---
 
