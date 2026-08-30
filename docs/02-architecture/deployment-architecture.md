@@ -126,10 +126,10 @@ python -m ulpf.cli dashboard --port 8000 --output-dir output/
 ## 5. Network Ports, Paths & Environment Variables
 
 ### 5.1 Network Ports
-| Port | Protocol | Service / Component | Purpose | Config Flag |
-|---|---|---|---|---|
-| **8000** | TCP (HTTP) | FastAPI / Uvicorn Dashboard | Web UI, REST API, SSE Stream | `--port` / `ULPF_PORT` |
-| **1514** | UDP & TCP | `SyslogNetworkListener` | Real-time network syslog ingestion | `--port` / `-p` in `ulpf listen` |
+| Port     | Protocol   | Service / Component         | Purpose                            | Config Flag                      |
+| -------- | ---------- | --------------------------- | ---------------------------------- | -------------------------------- |
+| **8000** | TCP (HTTP) | FastAPI / Uvicorn Dashboard | Web UI, REST API, SSE Stream       | `--port` / `ULPF_PORT`           |
+| **1514** | UDP & TCP  | `SyslogNetworkListener`     | Real-time network syslog ingestion | `--port` / `-p` in `ulpf listen` |
 
 ### 5.2 Default Filesystem Layout
 ```text
@@ -153,9 +153,9 @@ output/
 ```
 
 ### 5.3 Environment Variables
-| Variable | Default | Purpose |
-|---|---|---|
-| `ULPF_API_KEY` | None (unauthenticated) | If set, enforces `X-API-Key` authentication header on mutating endpoints (`/api/reindex`, `/api/ingest/*`, `/api/live-monitor/*`). |
-| `ULPF_OUTPUT_DIR` | `output` | Overrides base directory for all forensic, index, and sink outputs. |
-| `ULPF_PORT` | `8000` | Overrides default HTTP listening port for dashboard. |
-| `ULPF_HOST` | `127.0.0.1` | Overrides default listening interface for dashboard. |
+| Variable          | Purpose                                                                                                                            | Default                |
+| ----------------- | ---------------------------------------------------------------------------------------------------------------------------------- | ---------------------- |
+| `ULPF_API_KEY`    | If set, enforces `X-API-Key` authentication header on mutating endpoints (`/api/reindex`, `/api/ingest/*`, `/api/live-monitor/*`). | None (unauthenticated) |
+| `ULPF_OUTPUT_DIR` | Overrides base directory for all forensic, index, and sink outputs.                                                                | `output`               |
+| `ULPF_PORT`       | Overrides default HTTP listening port for dashboard.                                                                               | `8000`                 |
+| `ULPF_HOST`       | Overrides default listening interface for dashboard.                                                                               | `127.0.0.1`            |
