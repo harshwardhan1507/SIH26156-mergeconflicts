@@ -1,0 +1,48 @@
+name: my_custom_firewall
+vendor: MyVendor
+product: MyFirewall
+version: "1.0.0"
+enabled: true
+description: "Sample custom firewall onboarded declaratively without writing Python code"
+log_format: "custom_firewall_kv"
+
+framing:
+  type: line
+
+detection:
+  contains:
+    - "srcip="
+    - "dstip="
+  contains_mode: all
+
+parser:
+  type: key_value
+  pair_delimiter: " "
+  kv_delimiter: "="
+  strip_quotes: true
+
+fields:
+  timestamp: devtime
+  types:
+    srcport: port
+    dstport: port
+    bytes_in: int
+    bytes_out: int
+
+normalize:
+  source.vendor: MyVendor
+  source.product: MyFirewall
+  source.device_hostname: hostname
+  event.category: network
+  event.action: action
+  event.outcome: action
+  event.severity_numeric: 4.0
+  network.src_ip: srcip
+  network.dst_ip: dstip
+  network.src_port: srcport
+  network.dst_port: dstport
+  network.protocol: proto
+  network.bytes_in: bytes_in
+  network.bytes_out: bytes_out
+  identity.username: user
+  retain_unmapped: true

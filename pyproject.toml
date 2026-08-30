@@ -22,7 +22,7 @@ ulpf = "ulpf.cli:main"
 ulpf-dashboard = "ulpf.dashboard.app:main"
 
 [project.optional-dependencies]
-dev = ["pytest>=7.4", "pytest-cov>=4.0", "httpx>=0.27.0"]
+dev = ["pytest>=7.4", "pytest-cov>=4.0", "httpx>=0.27.0", "pytest-asyncio>=0.23.0"]
 # Optional: real columnar Parquet output for ParquetSink (ulpf/sinks/parquet_sink.py).
 # Without it, ParquetSink falls back to a partitioned NDJSON layout automatically —
 # useful for air-gapped sites that haven't vetted pyarrow into their wheelhouse yet.
@@ -38,6 +38,10 @@ where = ["."]  # ulpf is the top-level package
 ulpf = [
     "schemas/*.json",
     "schemas/mappings/*.yaml",
+    "schemas/declarative_sources/*.yaml",
     "config/*.yaml",
     "dashboard/static/*",
 ]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"

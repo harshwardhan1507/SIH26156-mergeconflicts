@@ -1,0 +1,40 @@
+name: auth_service_json
+vendor: Auth0Custom
+product: IdentityService
+version: "1.0.0"
+enabled: true
+description: "Declarative JSON authentication service log source"
+log_format: "auth_json"
+
+framing:
+  type: json_stream
+
+detection:
+  json_keys:
+    - "auth_event_type"
+    - "account_id"
+
+parser:
+  type: json
+  json_paths:
+    user_name: "actor.username"
+    client_ip: "actor.ip"
+    rule_applied: "policy.rule_id"
+
+fields:
+  timestamp: "timestamp"
+  types:
+    session_id: "string"
+
+normalize:
+  source.vendor: Auth0Custom
+  source.product: IdentityService
+  source.device_hostname: "auth-cluster-01"
+  event.category: authentication
+  event.action: "auth_event_type"
+  event.outcome: "status"
+  event.severity_numeric: 5.0
+  network.src_ip: "client_ip"
+  identity.username: "user_name"
+  rule.rule_id: "rule_applied"
+  retain_unmapped: true

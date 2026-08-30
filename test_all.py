@@ -550,6 +550,86 @@ def main():
     except Exception as e:
         record("criteria", "Criteria conformance check", False, str(e))
 
+    # 13. SIH26156 PRODUCTION-GRADE GAP CLOSING ENHANCEMENTS
+    section_header("13. SIH26156 PRODUCTION-GRADE GAP-CLOSING ENHANCEMENTS")
+    try:
+        # 1. Declarative Source Onboarding & Inference
+        from ulpf.core.declarative import DeclarativeSourceRegistry, infer_declarative_mapping
+        reg = DeclarativeSourceRegistry(sources_dir=PROJECT_ROOT / "ulpf" / "schemas" / "declarative_sources")
+        num_decl = reg.scan_and_register()
+        record("production", f"Declarative No-Code Registry: {num_decl} declarative sources loaded", num_decl >= 4)
+
+        sample_kv = 'devtime="2026-08-30T12:00:00Z" srcip=10.1.1.100 dstip=192.168.1.1 srcport=54321 dstport=443 action=allow user=alice'
+        inf = infer_declarative_mapping(sample_kv, "sample_fw")
+        record("production", "No-Code Mapping Inference: Auto-detects KV and generates draft config",
+               inf.get("parser", {}).get("type") == "key_value" and "network.src_ip" in inf.get("normalize", {}))
+
+        # 2. Multi-Format Event Framing & Multiline Aggregation
+        from ulpf.core.framing import MultilineRegexFramer, JSONStreamFramer, SyslogOctetFramer
+        m_framer = MultilineRegexFramer(start_pattern=r"^\d{4}-\d{2}-\d{2}")
+        m_chunks = [b"2026-08-30 [INFO] Start\n2026-08-30 [ERR] Trace\n  at com.Main(Line 1)\n"]
+        m_res = list(m_framer.frame(m_chunks))
+        record("production", f"Event Framing Layer: Multiline stacktrace aggregation ({len(m_res)} frames)",
+               len(m_res) == 2 and "at com.Main" in m_res[1].raw_text)
+
+        # 3. Scalable Segmented Raw Storage Mode & Random Seek
+        from ulpf.core.segmented_raw_store import SegmentedRawStore
+        with tempfile.TemporaryDirectory() as td:
+            seg_store = SegmentedRawStore(base_dir=td, max_segment_size=1024 * 1024)
+            t_eid = str(uuid.uuid4())
+            t_payload = "Segmented Raw Store Forensic Payload - Preserved 100%"
+            s_hash = seg_store.put(t_eid, t_payload, tenant_id="sih_tenant")
+            ret_payload = seg_store.get(t_eid)
+            seg_rec = seg_store.get_record(t_eid)
+            record("production", "Segmented Raw Store: Byte-exact O(1) random seek & SHA-256 integrity",
+                   ret_payload == t_payload and seg_rec.sha256 == s_hash and seg_rec.tenant_id == "sih_tenant")
+            seg_store.close()
+            import gc; gc.collect()
+
+        # 4. OCSF & ECS Crosswalk Standards Translation
+        from ulpf.crosswalk.ocsf import to_ocsf
+        from ulpf.crosswalk.ecs import to_ecs
+        cross_sample = {
+            "event_id": str(uuid.uuid4()),
+            "ingest_timestamp": "2026-08-30T12:00:00Z",
+            "source": {"vendor": "Cisco", "product": "ASA", "log_format": "syslog"},
+            "event": {"category": "network", "action": "deny", "severity_numeric": 7.0},
+            "network": {"src_ip": "10.0.0.1", "src_port": 12345, "dst_ip": "1.1.1.1", "dst_port": 53, "protocol": "udp"},
+            "identity": {"username": "admin"},
+        }
+        ocsf_obj = to_ocsf(cross_sample)
+        ecs_obj = to_ecs(cross_sample)
+        record("production", "Taxonomy Crosswalk: UES -> OCSF 1.1 Class 4001 Network Activity",
+               ocsf_obj.get("class_uid") == 4001 and ocsf_obj.get("src_endpoint", {}).get("ip") == "10.0.0.1")
+        record("production", "Taxonomy Crosswalk: UES -> ECS 8.11 Transport & Observer mapping",
+               ecs_obj.get("ecs", {}).get("version") == "8.11.0" and ecs_obj.get("source", {}).get("ip") == "10.0.0.1")
+
+        # 5. Live Host Localhost & Port Classification (MySQL Port 3306)
+        from ulpf.collectors.live_monitor import _PORT_SERVICE_MAP
+        record("production", "Live Monitor: Localhost MySQL (3306) port & service classification",
+               "MySQL" in _PORT_SERVICE_MAP.get(3306, ""))
+
+        # 6. Persistent Source Management & Observability Backend
+        from ulpf.core.source_manager import SourceManager
+        with tempfile.TemporaryDirectory() as td:
+            sm = SourceManager(output_dir=td)
+            sources = sm.list_sources()
+            metrics = sm.get_pipeline_metrics()
+            record("production", f"Source Observability: SourceManager initialized ({len(sources)} sources tracked)",
+                   len(sources) >= 11 and "total_sources_registered" in metrics)
+            sm.close()
+            import gc; gc.collect()
+
+        # 7. High-Throughput Benchmarking Tool Verification
+        from ulpf.tools.benchmark import run_benchmark
+        with tempfile.TemporaryDirectory() as td:
+            bench_res = run_benchmark(events_count=200, workers=1, sink_type="none", raw_store_mode="none", output_dir=td)
+            record("production", f"Benchmarking Tool: Verified throughput measurement ({bench_res.get('eps'):,} EPS)",
+                   bench_res.get("events_processed") == 200 and bench_res.get("eps") > 0)
+            import gc; gc.collect()
+    except Exception as e:
+        record("production", "Production enhancements check", False, str(e))
+
     # -------------------------------------------------------------------------
     # FINAL SCORECARD & SUMMARY
     # -------------------------------------------------------------------------

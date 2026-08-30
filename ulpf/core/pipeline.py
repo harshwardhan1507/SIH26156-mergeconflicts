@@ -116,7 +116,10 @@ class Pipeline:
         event_id = str(uuid.uuid5(uuid.NAMESPACE_URL, f"ulpf:{tenant_id}:{source_tag}:{raw_hash}"))
 
         # 3. Store raw event immediately (zero information loss even on parse errors)
-        self.raw_store.put(event_id, raw_bytes)
+        try:
+            self.raw_store.put(event_id, raw_bytes, tenant_id=tenant_id, ingest_ts=ingest_ts)
+        except TypeError:
+            self.raw_store.put(event_id, raw_bytes)
 
         # 4. Detect format
         format_id = self.detector.detect(raw_line, source_tag)
@@ -144,8 +147,14 @@ class Pipeline:
                     'raw_format': 'unknown',
                     'raw_hash': raw_hash,
                 },
+                'raw_payload': raw_line,
+                'raw_hash': raw_hash,
+                'stage': 'detection',
+                'error_type': 'ParserNotFound',
+                'error_message': 'No registered or declarative parser matched event format',
                 'error': 'No parser matched format',
                 'source_tag': source_tag,
+                'timestamp': ingest_ts.isoformat(),
             }
             if hasattr(self.validator, 'dead_letter_sink') and self.validator.dead_letter_sink:
                 try:
@@ -170,9 +179,15 @@ class Pipeline:
                     'raw_format': parser.log_format,
                     'raw_hash': raw_hash,
                 },
+                'raw_payload': raw_line,
+                'raw_hash': raw_hash,
+                'stage': 'extraction',
+                'error_type': type(exc).__name__,
+                'error_message': str(exc),
                 'error': f'Extraction failed: {exc}',
                 'parser': parser.name,
                 'source_tag': source_tag,
+                'timestamp': ingest_ts.isoformat(),
             }
             if hasattr(self.validator, 'dead_letter_sink') and self.validator.dead_letter_sink:
                 try:
@@ -187,6 +202,25 @@ class Pipeline:
         except Exception as exc:
             logger.warning('Normalization failed for %s: %s', event_id, exc)
             self._errors += 1
+            dead_letter_record = {
+                'schema_version': '1.2.0',
+                'tenant_id': tenant_id,
+                'event_id': event_id,
+                'ingest_timestamp': ingest_ts.isoformat(),
+                'raw_payload': raw_line,
+                'raw_hash': raw_hash,
+                'stage': 'normalization',
+                'error_type': type(exc).__name__,
+                'error_message': str(exc),
+                'parser': parser.name,
+                'source_tag': source_tag,
+                'timestamp': ingest_ts.isoformat(),
+            }
+            if hasattr(self.validator, 'dead_letter_sink') and self.validator.dead_letter_sink:
+                try:
+                    self.validator.dead_letter_sink.write(dead_letter_record)
+                except Exception:
+                    pass
             return False
 
         # 8. Build full UES event

@@ -1,0 +1,55 @@
+name: proxy_gateway_csv
+vendor: SecureProxy
+product: WebGateway
+version: "1.0.0"
+enabled: true
+description: "Declarative CSV web proxy access log source"
+log_format: "proxy_csv"
+
+framing:
+  type: line
+
+detection:
+  contains:
+    - "SECURE_PROXY_GW"
+  contains_mode: any
+
+parser:
+  type: csv
+  delimiter: ","
+  columns:
+    - marker
+    - timestamp
+    - client_ip
+    - server_ip
+    - port
+    - username
+    - method
+    - status_code
+    - bytes_sent
+    - bytes_rcvd
+    - action
+
+fields:
+  timestamp: timestamp
+  types:
+    port: port
+    status_code: int
+    bytes_sent: int
+    bytes_rcvd: int
+
+normalize:
+  source.vendor: SecureProxy
+  source.product: WebGateway
+  source.device_hostname: marker
+  event.category: network
+  event.action: action
+  event.outcome: action
+  event.severity_numeric: 3.0
+  network.src_ip: client_ip
+  network.dst_ip: server_ip
+  network.dst_port: port
+  network.bytes_out: bytes_sent
+  network.bytes_in: bytes_rcvd
+  identity.username: username
+  retain_unmapped: true

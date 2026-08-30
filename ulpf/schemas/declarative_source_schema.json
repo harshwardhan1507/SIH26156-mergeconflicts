@@ -1,0 +1,181 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "DeclarativeSourceSchema",
+  "type": "object",
+  "required": ["name", "vendor", "product", "parser"],
+  "additionalProperties": true,
+  "properties": {
+    "name": {
+      "type": "string",
+      "pattern": "^[a-zA-Z0-9_-]+$",
+      "description": "Unique identifier for this declarative log source"
+    },
+    "vendor": {
+      "type": "string",
+      "description": "Vendor name (e.g. Fortinet, Palo Alto, Cisco, CustomVendor)"
+    },
+    "product": {
+      "type": "string",
+      "description": "Product model or software name (e.g. FortiGate, CustomFirewall, ProxyGateway)"
+    },
+    "version": {
+      "type": "string",
+      "default": "1.0.0"
+    },
+    "enabled": {
+      "type": "boolean",
+      "default": true
+    },
+    "description": {
+      "type": "string"
+    },
+    "log_format": {
+      "type": "string",
+      "default": "custom_declarative"
+    },
+    "framing": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "type": "string",
+          "enum": ["line", "delimiter", "regex_multiline", "multiline_regex", "multiline", "json_stream", "syslog_octet"],
+          "default": "line"
+        },
+        "delimiter": {
+          "type": "string",
+          "default": "\n"
+        },
+        "pattern": {
+          "type": "string"
+        },
+        "match_mode": {
+          "type": "string",
+          "enum": ["start", "end"]
+        },
+        "start_pattern": {
+          "type": "string"
+        },
+        "end_pattern": {
+          "type": "string"
+        },
+        "case_insensitive": {
+          "type": "boolean"
+        },
+        "max_lines_per_event": {
+          "type": "integer"
+        },
+        "max_bytes": {
+          "type": "integer",
+          "default": 2097152
+        }
+      }
+    },
+    "detection": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "contains": {
+          "type": ["array", "string"],
+          "items": { "type": "string" }
+        },
+        "contains_mode": {
+          "type": "string",
+          "enum": ["all", "any"],
+          "default": "all"
+        },
+        "regex": {
+          "type": "string"
+        },
+        "prefix": {
+          "type": "string"
+        },
+        "json_keys": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "source_tag_prefix": {
+          "type": "string"
+        }
+      }
+    },
+    "parser": {
+      "type": "object",
+      "required": ["type"],
+      "additionalProperties": true,
+      "properties": {
+        "type": {
+          "type": "string",
+          "enum": ["key_value", "csv", "json", "regex", "delimiter"]
+        },
+        "pair_delimiter": {
+          "type": "string",
+          "default": " "
+        },
+        "kv_delimiter": {
+          "type": "string",
+          "default": "="
+        },
+        "strip_quotes": {
+          "type": "boolean",
+          "default": true
+        },
+        "columns": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "has_header": {
+          "type": "boolean",
+          "default": false
+        },
+        "delimiter": {
+          "type": "string"
+        },
+        "pattern": {
+          "type": "string"
+        },
+        "flags": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "json_paths": {
+          "type": "object",
+          "additionalProperties": { "type": "string" }
+        }
+      }
+    },
+    "fields": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "timestamp": {
+          "type": ["string", "object"]
+        },
+        "types": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string",
+            "enum": ["string", "int", "float", "ip", "port", "bool", "iso_timestamp", "epoch_timestamp_s", "epoch_timestamp_ms", "epoch_timestamp_us"]
+          }
+        }
+      }
+    },
+    "normalize": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "retain_unmapped": {
+          "type": "boolean",
+          "default": true
+        },
+        "value_mappings": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "object",
+            "additionalProperties": { "type": "string" }
+          }
+        }
+      }
+    }
+  }
+}

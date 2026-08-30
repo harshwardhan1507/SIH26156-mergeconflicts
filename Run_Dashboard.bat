@@ -6,7 +6,7 @@ cd /d "%~dp0"
 
 echo ===============================================================================
 echo   UNIVERSAL LOG PRE-PROCESSING FRAMEWORK (ULPF)
-echo   1-Click Dashboard Server Launcher
+echo   Operations Dashboard Launcher
 echo ===============================================================================
 echo.
 
@@ -26,7 +26,10 @@ if exist "output\events.ndjson" (
     !PYTHON_EXE! -m ulpf.cli ingest --input ulpf/sample_logs --output output
 )
 
-echo [INFO] Starting ULPF Operations Dashboard...
-!PYTHON_EXE! -m ulpf.cli dashboard --port 8000 --output-dir output
+echo [INFO] Launching ULPF Operations Dashboard in persistent background mode...
+!PYTHON_EXE! -m ulpf.cli dashboard --background --port 8000 --output-dir output
 
-pause
+echo.
+echo [INFO] Server is active at http://127.0.0.1:8000
+echo [INFO] You can safely close this window. To stop the server, run Stop_Dashboard.bat
+timeout /t 5 >nul

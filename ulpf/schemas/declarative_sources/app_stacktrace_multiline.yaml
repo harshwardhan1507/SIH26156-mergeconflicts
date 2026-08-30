@@ -1,0 +1,40 @@
+name: app_stacktrace_multiline
+vendor: EnterpriseApp
+product: CoreServer
+version: "1.0.0"
+enabled: true
+description: "Enterprise Java application logs with multiline stack traces"
+log_format: "app_stacktrace_multiline"
+
+framing:
+  type: "multiline_regex"
+  pattern: '^\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2}'
+  match_mode: "start"
+
+detection:
+  contains:
+    - "CoreServer"
+    - "Exception"
+    - "ERROR"
+  contains_mode: "any"
+
+parser:
+  type: "regex"
+  pattern: '^(?P<timestamp>\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2})\s+\[(?P<thread>[^\]]+)\]\s+(?P<level>[A-Z]+)\s+(?P<logger>\S+)\s+-\s+(?P<message>.*)$'
+  flags:
+    - "DOTALL"
+    - "MULTILINE"
+
+fields:
+  timestamp: "timestamp"
+  types:
+    level: "string"
+    logger: "string"
+    thread: "string"
+
+normalize:
+  source.vendor: "_literal:EnterpriseApp"
+  source.product: "_literal:CoreServer"
+  event.category: "_literal:system"
+  event.action: "level"
+  event.severity_numeric: 7.0

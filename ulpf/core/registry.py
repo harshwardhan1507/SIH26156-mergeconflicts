@@ -35,3 +35,20 @@ def get_all_parsers() -> list["BaseParser"]:
 
 def list_parser_names() -> list[str]:
     return list(_REGISTRY.keys())
+
+
+def load_declarative_sources(sources_dir: str | None = None) -> int:
+    """Scan and register declarative sources dynamically."""
+    try:
+        from ulpf.core.declarative import DeclarativeSourceRegistry
+        registry = DeclarativeSourceRegistry(sources_dir)
+        return registry.scan_and_register()
+    except Exception:
+        return 0
+
+
+# Automatically register bundled declarative sources
+try:
+    load_declarative_sources()
+except Exception:
+    pass

@@ -121,7 +121,16 @@ class FormatDetector:
         if _RFC3164_RE.match(stripped) or _RFC3164_ALT_RE.match(stripped):
             return 'syslog_rfc3164'
 
-        # 3. Dynamic evaluation of all registered parsers (for plug-and-play extensions)
+        # 3. Dynamic evaluation of declarative no-code sources
+        try:
+            from ulpf.core.declarative import get_declarative_registry
+            for decl_parser in get_declarative_registry().list_sources():
+                if decl_parser.enabled and decl_parser.match(raw_line):
+                    return decl_parser.name
+        except Exception:
+            pass
+
+        # 4. Dynamic evaluation of all registered Python plugin parsers
         for parser in get_all_parsers():
             try:
                 if parser.match(raw_line):
@@ -129,7 +138,7 @@ class FormatDetector:
             except Exception:
                 pass
 
-        # 4. Key-value fallback
+        # 5. Key-value fallback
         if _KV_RE.search(stripped):
             return 'kv'
 

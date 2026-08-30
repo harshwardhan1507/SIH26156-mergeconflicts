@@ -81,14 +81,52 @@ def _resolve_direction(extracted: dict[str, Any]) -> str | None:
 
 
 def _get_field(extracted: dict[str, Any], field_spec: Any) -> Any:
-    """Resolve a field_spec (a key name, literal, or None) from the extracted dict."""
+    """Resolve a field_spec (a key name, literal, transform, or None) from the extracted dict."""
     if field_spec is None:
         return None
     spec = str(field_spec).strip()
-    if spec == 'null':
+    if spec in ('null', 'none', '~', ''):
         return None
     if spec.startswith('_literal:'):
         return spec.split(':', 1)[1]
+    if spec.startswith('_upper:'):
+        target = spec.split(':', 1)[1].strip()
+        val = extracted.get(target)
+        return str(val).upper() if val is not None else None
+    if spec.startswith('_lower:'):
+        target = spec.split(':', 1)[1].strip()
+        val = extracted.get(target)
+        return str(val).lower() if val is not None else None
+    if spec.startswith('_strip:'):
+        target = spec.split(':', 1)[1].strip()
+        val = extracted.get(target)
+        return str(val).strip() if val is not None else None
+    if spec.startswith('_first:'):
+        candidates = [c.strip() for c in spec.split(':', 1)[1].split(',') if c.strip()]
+        for c in candidates:
+            if extracted.get(c) is not None and str(extracted.get(c)).strip() != '':
+                return extracted.get(c)
+        return None
+    if spec.startswith('_split:'):
+        body = spec.split(':', 1)[1]
+        if ',' in body:
+            rem, idx_s = body.rsplit(',', 1)
+            idx_s = idx_s.strip()
+            if ',' in rem and idx_s.isdigit():
+                fld, delim = rem.split(',', 1)
+                raw_v = extracted.get(fld.strip())
+                if raw_v is not None:
+                    tokens = str(raw_v).split(delim)
+                    idx = int(idx_s)
+                    if 0 <= idx < len(tokens):
+                        return tokens[idx].strip()
+        return None
+    if spec.startswith('_default:'):
+        parts = spec.split(':', 1)[1].split(',', 1)
+        fld = parts[0].strip()
+        dflt = parts[1].strip() if len(parts) > 1 else ''
+        val = extracted.get(fld)
+        return val if (val is not None and str(val).strip() != '') else dflt
     if spec.startswith('_category_default:'):
         return None  # handled separately
     if spec == '_outcome_from_action':
@@ -152,6 +190,15 @@ class NormalizationEngine:
 
     def normalize(self, extracted: dict[str, Any], parser_name: str) -> dict[str, Any]:
         """Map extracted fields → UES dict (without envelope fields like event_id)."""
+        # Check declarative source registry first for dynamic no-code source definitions
+        try:
+            from ulpf.core.declarative import get_declarative_registry
+            decl_source = get_declarative_registry().get_source(parser_name)
+            if decl_source is not None:
+                return decl_source.build_normalized_event(extracted)
+        except Exception:
+            pass
+
         mapping = self._get_mapping(parser_name)
 
         ruleset_version = mapping.get('ruleset_version', '1.2.0')
@@ -199,7 +246,7 @@ class NormalizationEngine:
         # Outcome
         outcome_spec = str(ev_map.get('outcome', '')).strip()
         if outcome_spec == '_outcome_from_action':
-            outcome = _resolve_outcome(extracted, action_spec)
+            outcome = _ACTION_OUTCOME_MAP.get(str(action_val).lower().strip(), 'unknown') if action_val else 'unknown'
         else:
             outcome = _get_field(extracted, outcome_spec)
 

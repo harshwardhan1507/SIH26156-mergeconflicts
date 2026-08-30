@@ -74,6 +74,43 @@ class MIB_UDPROW_OWNER_PID(ctypes.Structure):
 
 from collections import deque
 
+_PORT_SERVICE_MAP: dict[int, str] = {
+    3306: "MySQL Database",
+    5432: "PostgreSQL Database",
+    1433: "Microsoft SQL Server",
+    1521: "Oracle Database",
+    27017: "MongoDB",
+    6379: "Redis Cache",
+    443: "HTTPS Web",
+    80: "HTTP Web",
+    22: "SSH Terminal",
+    53: "DNS Name Resolution",
+    8080: "HTTP Alternate",
+    8000: "HTTP Dev / API",
+    9092: "Apache Kafka",
+    9200: "Elasticsearch",
+    389: "LDAP Directory",
+    636: "LDAPS Secure",
+    88: "Kerberos Auth",
+    445: "SMB File Sharing",
+}
+
+_TCP_STATE_MAP: dict[int, str] = {
+    1: "CLOSED",
+    2: "LISTEN",
+    3: "SYN_SENT",
+    4: "SYN_RCVD",
+    5: "ESTABLISHED",
+    6: "FIN_WAIT1",
+    7: "FIN_WAIT2",
+    8: "CLOSE_WAIT",
+    9: "CLOSING",
+    10: "LAST_ACK",
+    11: "TIME_WAIT",
+    12: "DELETE_TCB",
+}
+
+
 class LiveSystemMonitor:
     """
     Background worker that monitors real-time OS changes, process launches,
@@ -106,6 +143,8 @@ class LiveSystemMonitor:
         self.event_history: deque = deque(maxlen=250)
         self.events_captured = 0
         self.seen_win_record_ids: set[str] = set()
+        self.permission_error: str | None = None
+        self.last_scan_time: datetime.datetime | None = None
 
         # Initialize Windows DLLs
         self.is_windows = self.os_type == "windows"
@@ -212,10 +251,14 @@ class LiveSystemMonitor:
                         offset = 4 + i * sz
                         row = MIB_TCPROW_OWNER_PID.from_buffer_copy(buf[offset : offset + sz])
                         dst_ip = socket.inet_ntoa(struct.pack("<I", row.dwRemoteAddr))
-                        if dst_ip not in ("0.0.0.0", "127.0.0.1", "255.255.255.255"):
-                            src_ip = socket.inet_ntoa(struct.pack("<I", row.dwLocalAddr))
-                            src_port = socket.ntohs(row.dwLocalPort & 0xFFFF)
-                            dst_port = socket.ntohs(row.dwRemotePort & 0xFFFF)
+                        dst_port = socket.ntohs(row.dwRemotePort & 0xFFFF)
+                        src_ip = socket.inet_ntoa(struct.pack("<I", row.dwLocalAddr))
+                        src_port = socket.ntohs(row.dwLocalPort & 0xFFFF)
+
+                        # Only filter out unbound listening addresses with 0 port, allow localhost (127.0.0.1)
+                        if dst_ip != "0.0.0.0" and dst_ip != "255.255.255.255" and dst_port > 0:
+                            state_str = _TCP_STATE_MAP.get(row.dwState, str(row.dwState))
+                            service_lbl = _PORT_SERVICE_MAP.get(dst_port, _PORT_SERVICE_MAP.get(src_port, "TCP Socket"))
                             conns.append({
                                 "pid": row.dwOwningPid,
                                 "src_ip": src_ip,
@@ -223,10 +266,67 @@ class LiveSystemMonitor:
                                 "dst_ip": dst_ip,
                                 "dst_port": dst_port,
                                 "proto": "tcp",
-                                "state": row.dwState,
+                                "state": state_str,
+                                "state_raw": row.dwState,
+                                "service_inferred": service_lbl,
+                                "is_localhost": dst_ip in ("127.0.0.1", "::1") or src_ip in ("127.0.0.1", "::1"),
                             })
         except Exception as e:
             logger.debug(f"TCP scan error: {e}")
+        self.last_scan_time = datetime.datetime.now(datetime.timezone.utc)
+        return conns
+
+    def _scan_network_connections_posix(self) -> list[dict[str, Any]]:
+        """
+        Scan active network sockets on Linux / macOS / POSIX systems using psutil.
+        Returns identical schema to Windows network scan.
+        Distinguishes psutil.AccessDenied from empty connection list and surfaces
+        it through self.permission_error and get_stats().
+        """
+        conns: list[dict[str, Any]] = []
+        try:
+            import psutil
+        except ImportError:
+            self.permission_error = "psutil is not installed (required for POSIX socket scanning)"
+            logger.warning("psutil is not installed: POSIX live network socket scanning unavailable")
+            return []
+
+        try:
+            raw_sconns = psutil.net_connections(kind="inet")
+            self.permission_error = None
+            self.last_scan_time = datetime.datetime.now(datetime.timezone.utc)
+            for sconn in raw_sconns:
+                if not sconn.raddr:
+                    continue
+                dst_ip = str(getattr(sconn.raddr, "ip", "") or "")
+                dst_port = int(getattr(sconn.raddr, "port", 0) or 0)
+                src_ip = str(getattr(sconn.laddr, "ip", "0.0.0.0") or "0.0.0.0") if sconn.laddr else "0.0.0.0"
+                src_port = int(getattr(sconn.laddr, "port", 0) or 0) if sconn.laddr else 0
+                proto = "tcp" if sconn.type == socket.SOCK_STREAM else "udp"
+
+                if dst_ip not in ("0.0.0.0", "255.255.255.255", "") and dst_port > 0:
+                    state_str = str(sconn.status or "ESTABLISHED")
+                    service_lbl = _PORT_SERVICE_MAP.get(dst_port, _PORT_SERVICE_MAP.get(src_port, "TCP Socket" if proto == "tcp" else "UDP Socket"))
+                    conns.append({
+                        "pid": int(sconn.pid or 0),
+                        "src_ip": src_ip,
+                        "src_port": src_port,
+                        "dst_ip": dst_ip,
+                        "dst_port": dst_port,
+                        "proto": proto,
+                        "state": state_str,
+                        "state_raw": state_str,
+                        "service_inferred": service_lbl,
+                        "is_localhost": dst_ip in ("127.0.0.1", "::1", "localhost") or src_ip in ("127.0.0.1", "::1", "localhost"),
+                    })
+        except getattr(psutil, "AccessDenied", Exception) as ad:
+            self.permission_error = "AccessDenied: Insufficient OS privileges to inspect network sockets (run as root/administrator)"
+            logger.warning(f"POSIX network socket scan failed with AccessDenied: {ad}")
+            return []
+        except Exception as e:
+            self.permission_error = f"POSIX socket scan error: {e}"
+            logger.warning(f"POSIX network socket scan error: {e}")
+            return []
         return conns
 
     def _build_process_event_xml(
@@ -440,9 +540,11 @@ class LiveSystemMonitor:
         # Baseline connections
         if self.is_windows:
             initial_conns = self._scan_network_connections_windows()
-            for c in initial_conns:
-                key = (c["pid"], c["src_ip"], c["src_port"], c["dst_ip"], c["dst_port"], c["proto"])
-                self.seen_connections.add(key)
+        else:
+            initial_conns = self._scan_network_connections_posix()
+        for c in initial_conns:
+            key = (c["pid"], c["src_ip"], c["src_port"], c["dst_ip"], c["dst_port"], c["proto"])
+            self.seen_connections.add(key)
 
         win_poll_counter = 0
 
@@ -472,17 +574,21 @@ class LiveSystemMonitor:
                 # 3. Detect Active Network Connections (IPs, Ports, Protocols)
                 if self.is_windows:
                     active_conns = self._scan_network_connections_windows()
-                    for conn in active_conns:
-                        key = (conn["pid"], conn["src_ip"], conn["src_port"], conn["dst_ip"], conn["dst_port"], conn["proto"])
-                        if key not in self.seen_connections:
-                            self.seen_connections.add(key)
-                            if len(self.seen_connections) > 10000:
-                                self.seen_connections.clear()
-                            # Resolve process info
-                            proc_info = self.known_pids.get(conn["pid"], {"name": "system.exe", "path": ""})
-                            net_xml = self._build_network_connection_xml(conn, proc_info, now)
-                            self._dispatch_event(net_xml, "live_network_monitor", now)
-                            logger.info(f"Captured connection: {proc_info['name']} -> {conn['dst_ip']}:{conn['dst_port']}")
+                else:
+                    active_conns = self._scan_network_connections_posix()
+
+                for conn in active_conns:
+                    key = (conn["pid"], conn["src_ip"], conn["src_port"], conn["dst_ip"], conn["dst_port"], conn["proto"])
+                    if key not in self.seen_connections:
+                        self.seen_connections.add(key)
+                        if len(self.seen_connections) > 10000:
+                            self.seen_connections.clear()
+                        # Resolve process info
+                        default_name = "system.exe" if self.is_windows else "system"
+                        proc_info = self.known_pids.get(conn["pid"], {"name": default_name, "path": ""})
+                        net_xml = self._build_network_connection_xml(conn, proc_info, now)
+                        self._dispatch_event(net_xml, "live_network_monitor", now)
+                        logger.info(f"Captured connection: {proc_info['name']} -> {conn['dst_ip']}:{conn['dst_port']}")
 
                 # 4. Poll Windows Event Logs every 4th iteration (~1 second)
                 win_poll_counter += 1
@@ -527,6 +633,9 @@ class LiveSystemMonitor:
                 "platform": self.os_type,
                 "hostname": self.hostname,
                 "username": self.username,
+                "permission_error": self.permission_error,
+                "scan_status": "permission_denied" if self.permission_error else ("running" if self._running else "stopped"),
+                "last_scan_time": self.last_scan_time.isoformat() if self.last_scan_time else None,
             }
 
     def get_recent_events(self, limit: int = 100) -> list[dict[str, Any]]:
@@ -535,19 +644,21 @@ class LiveSystemMonitor:
             return list(self.event_history)[:limit]
 
     def get_active_connections(self) -> list[dict[str, Any]]:
-        """Return currently active outbound TCP/UDP socket connections."""
+        """Return currently active outbound TCP/UDP socket connections across Windows, Linux, and macOS."""
         if self.is_windows:
             raw_conns = self._scan_network_connections_windows()
-            resolved = []
-            for c in raw_conns:
-                p_info = self.known_pids.get(c["pid"], {"name": "system.exe", "path": ""})
-                resolved.append({
-                    **c,
-                    "process_name": p_info.get("name", "system.exe"),
-                    "process_path": p_info.get("path", ""),
-                })
-            return resolved
-        return []
+        else:
+            raw_conns = self._scan_network_connections_posix()
+        resolved = []
+        default_name = "system.exe" if self.is_windows else "system"
+        for c in raw_conns:
+            p_info = self.known_pids.get(c["pid"], {"name": default_name, "path": ""})
+            resolved.append({
+                **c,
+                "process_name": p_info.get("name", default_name),
+                "process_path": p_info.get("path", ""),
+            })
+        return resolved
 
     def get_running_processes(self, limit: int = 150) -> list[dict[str, Any]]:
         """Return snapshot of currently running processes."""
@@ -560,4 +671,9 @@ class LiveSystemMonitor:
                 return list(current.values())[:limit]
             procs = list(self.known_pids.values())
         return procs[:limit]
+
+
+# Backward-compatible alias
+LiveHostMonitor = LiveSystemMonitor
+
 

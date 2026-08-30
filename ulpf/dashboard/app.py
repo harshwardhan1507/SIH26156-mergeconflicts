@@ -8,6 +8,7 @@ Uses the SQLite indexer for fast filtering and FileRawStore for O(1) raw lookups
 from __future__ import annotations
 
 import asyncio
+import io
 import json
 import logging
 import os
@@ -16,6 +17,25 @@ from datetime import datetime, timezone
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any
+
+# Safe Null stream for windowed GUI or daemon modes where sys.stdout/stderr may be None
+class SafeStream:
+    """Safe stream wrapper preventing AttributeError/UnsupportedOperation in GUI/daemon modes."""
+    def write(self, text: str) -> int:
+        return len(text)
+    def flush(self) -> None:
+        pass
+    def isatty(self) -> bool:
+        return False
+    def fileno(self) -> int:
+        raise io.UnsupportedOperation("No fileno in GUI/headless mode")
+
+if sys.stdout is None:
+    sys.stdout = SafeStream()
+if sys.stderr is None:
+    sys.stderr = SafeStream()
+if sys.stdin is None:
+    sys.stdin = io.StringIO()
 
 import click
 import uvicorn
@@ -65,16 +85,34 @@ def _require_api_key(x_api_key: str | None = Header(default=None, alias="X-API-K
 class IngestLineRequest(BaseModel):
     line: str
     source_tag: str = "api_ingest"
+    tenant_id: str = "default"
 
 class IngestBatchRequest(BaseModel):
     lines: list[str]
     source_tag: str = "api_ingest"
+    tenant_id: str = "default"
+
+class DeclarativeSourceRequest(BaseModel):
+    config: dict[str, Any]
+
+class TestSourceRequest(BaseModel):
+    config: dict[str, Any]
+    sample_event: str
+    tenant_id: str = "default"
+
+class InferSourceRequest(BaseModel):
+    sample_event: str
+    name_hint: str = "custom_source"
+
+class CrosswalkRequest(BaseModel):
+    event: dict[str, Any]
 
 # Global state initialized on startup
 STATE: dict[str, Any] = {
     "output_dir": Path("output"),
     "indexer": None,
     "raw_store": None,
+    "source_manager": None,
     "static_dir": Path(__file__).parent / "static",
 }
 
@@ -140,12 +178,44 @@ def _resolve_output_dir(configured_dir: str | Path | None = None) -> Path:
         return user_dir
 
 
+def _write_pid_file(output_dir: Path, host: str, port: int) -> None:
+    """Record running server metadata and PID for status and graceful stopping."""
+    try:
+        pid_file = output_dir / "ulpf_dashboard.pid"
+        data = {
+            "pid": os.getpid(),
+            "host": host,
+            "port": port,
+            "start_time": datetime.now(timezone.utc).isoformat(),
+        }
+        with open(pid_file, "w", encoding="utf-8") as f:
+            json.dump(data, f, indent=2)
+    except Exception as e:
+        logger.debug("Could not write PID file: %s", e)
+
+
+def _remove_pid_file(output_dir: Path) -> None:
+    """Remove server PID file upon clean shutdown."""
+    try:
+        pid_file = output_dir / "ulpf_dashboard.pid"
+        if pid_file.exists():
+            pid_file.unlink()
+    except Exception as e:
+        logger.debug("Could not remove PID file: %s", e)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     output_dir = STATE["output_dir"]
+    host = STATE.get("host", "127.0.0.1")
+    port = STATE.get("port", 8000)
+    _write_pid_file(output_dir, host, port)
+
     logger.info("Initializing ULPF Dashboard backend on output_dir=%s", output_dir)
+    from ulpf.core.source_manager import SourceManager
     STATE["indexer"] = EventIndexer(output_dir=output_dir)
     STATE["raw_store"] = FileRawStore(output_dir / "raw_store")
+    STATE["source_manager"] = SourceManager(output_dir=output_dir)
 
     # Initial sync
     initial_count = STATE["indexer"].sync_from_ndjson()
@@ -154,6 +224,7 @@ async def lifespan(app: FastAPI):
     # Cleanup on server shutdown
     if "live_monitor" in STATE and STATE["live_monitor"] is not None:
         STATE["live_monitor"].stop()
+    _remove_pid_file(output_dir)
 
 
 def create_app(
@@ -164,8 +235,12 @@ def create_app(
     """Create and configure the FastAPI application instance."""
     resolved_dir = _resolve_output_dir(output_dir)
     STATE["output_dir"] = resolved_dir
+    STATE["host"] = host
+    STATE["port"] = port
+    from ulpf.core.source_manager import SourceManager
     STATE["indexer"] = EventIndexer(output_dir=resolved_dir)
     STATE["raw_store"] = FileRawStore(resolved_dir / "raw_store")
+    STATE["source_manager"] = SourceManager(output_dir=resolved_dir)
     STATE["live_monitor"] = None  # Always start with Live OS Monitor OFF by default
 
     app = FastAPI(
@@ -452,6 +527,217 @@ def create_app(
         }
 
     # ------------------------------------------------------------------
+    # Source Management & Observability Endpoints
+    # ------------------------------------------------------------------
+
+    @app.get("/api/sources")
+    async def list_sources():
+        """List all registered log sources with real-time operational telemetry."""
+        sm: SourceManager = STATE["source_manager"]
+        sources = sm.list_sources()
+        metrics = sm.get_pipeline_metrics()
+        return {
+            "sources": sources,
+            "metrics": metrics,
+        }
+
+    @app.post("/api/sources", dependencies=[Depends(_require_api_key)])
+    async def create_declarative_source(req: DeclarativeSourceRequest):
+        """Register, validate, and activate a new declarative log source."""
+        sm: SourceManager = STATE["source_manager"]
+        success, errors, src = sm.register_declarative_source(req.config)
+        if not success:
+            raise HTTPException(status_code=400, detail={"message": "Invalid source configuration", "errors": errors})
+        return {"status": "ok", "source": src}
+
+    @app.get("/api/sources/{source_id}")
+    async def get_source_detail(source_id: str):
+        """Get source definition and stats by source_id."""
+        sm: SourceManager = STATE["source_manager"]
+        src = sm.get_source(source_id)
+        if not src:
+            raise HTTPException(status_code=404, detail=f"Source '{source_id}' not found")
+        return {"source": src}
+
+    @app.delete("/api/sources/{source_id}", dependencies=[Depends(_require_api_key)])
+    async def delete_source(source_id: str):
+        """Delete a declarative source definition."""
+        sm: SourceManager = STATE["source_manager"]
+        success = sm.delete_source(source_id)
+        if not success:
+            raise HTTPException(status_code=404, detail=f"Source '{source_id}' not found or cannot be deleted")
+        return {"status": "ok", "deleted": source_id}
+
+    @app.post("/api/sources/{source_id}/enable", dependencies=[Depends(_require_api_key)])
+    async def enable_source(source_id: str):
+        """Enable a log source."""
+        sm: SourceManager = STATE["source_manager"]
+        sm.set_source_enabled(source_id, True)
+        return {"status": "ok", "source_id": source_id, "enabled": True}
+
+    @app.post("/api/sources/{source_id}/disable", dependencies=[Depends(_require_api_key)])
+    async def disable_source(source_id: str):
+        """Disable a log source."""
+        sm: SourceManager = STATE["source_manager"]
+        sm.set_source_enabled(source_id, False)
+        return {"status": "ok", "source_id": source_id, "enabled": False}
+
+    @app.post("/api/sources/infer")
+    async def infer_source_mapping(req: InferSourceRequest):
+        """Infer draft declarative configuration YAML from a sample log line."""
+        from ulpf.core.declarative import infer_declarative_mapping
+        if not req.sample_event or not req.sample_event.strip():
+            raise HTTPException(status_code=400, detail="Sample event string is required")
+        draft = infer_declarative_mapping(req.sample_event, req.name_hint)
+        return {"draft_config": draft}
+
+    @app.post("/api/sources/test")
+    async def test_declarative_source(req: TestSourceRequest):
+        """
+        Test a sample raw log event against a declarative configuration.
+        Returns validation result, extracted fields, normalized UES event, unmapped attributes, and SHA-256.
+        """
+        from ulpf.core.declarative import DeclarativeSourceParser, validate_declarative_config
+        import hashlib
+        import uuid
+
+        valid, errors = validate_declarative_config(req.config)
+        if not valid:
+            return {
+                "valid": False,
+                "errors": errors,
+                "warnings": [],
+                "detected_format": req.config.get("log_format", "unknown"),
+                "extracted_fields": {},
+                "normalized_event": {},
+                "vendor_attributes": {},
+            }
+
+        sample = req.sample_event.strip()
+        raw_b = sample.encode("utf-8", errors="surrogateescape")
+        raw_hash = hashlib.sha256(raw_b).hexdigest()
+        event_id = str(uuid.uuid5(uuid.NAMESPACE_URL, f"ulpf:{req.tenant_id}:{req.config.get('name')}:{raw_hash}"))
+
+        parser = DeclarativeSourceParser(req.config)
+        is_match = parser.match(sample)
+
+        warnings = []
+        if not is_match:
+            warnings.append("Detection rule did not match the provided sample event.")
+
+        try:
+            extracted = parser.extract(sample)
+        except Exception as e:
+            return {
+                "valid": False,
+                "errors": [f"Extraction failed: {e}"],
+                "warnings": warnings,
+                "detected_format": parser.log_format,
+                "extracted_fields": {},
+                "normalized_event": {},
+                "vendor_attributes": {},
+                "raw_hash": raw_hash,
+                "event_id": event_id,
+            }
+
+        try:
+            normalized_core = parser.build_normalized_event(extracted)
+        except Exception as e:
+            return {
+                "valid": False,
+                "errors": [f"Normalization failed: {e}"],
+                "warnings": warnings,
+                "detected_format": parser.log_format,
+                "extracted_fields": extracted,
+                "normalized_event": {},
+                "vendor_attributes": {},
+                "raw_hash": raw_hash,
+                "event_id": event_id,
+            }
+
+        # Build full UES dictionary
+        now_iso = datetime.now(timezone.utc).isoformat()
+        ues_event = {
+            "schema_version": "1.2.0",
+            "tenant_id": req.tenant_id,
+            "event_id": event_id,
+            "ingest_timestamp": now_iso,
+            "source_event_timestamp": extracted.get("timestamp_dt") or now_iso,
+            "raw": {
+                "raw_payload": sample,
+                "raw_format": parser.log_format,
+                "raw_hash": raw_hash,
+            },
+            "source": normalized_core["source"],
+            "event": normalized_core["event"],
+            "network": normalized_core.get("network"),
+            "identity": normalized_core.get("identity"),
+            "rule": normalized_core.get("rule"),
+            "vendor_attributes": normalized_core.get("vendor_attributes", {}),
+            "lineage": {
+                "parser_name": parser.name,
+                "parser_version": parser.version,
+                "normalization_ruleset_version": parser.version,
+            },
+        }
+
+        # Validate with UES schema validator
+        schema_path = Path(__file__).parent.parent / "schemas" / "ues_schema.json"
+        from ulpf.core.validation import Validator
+        val = Validator(schema_path=schema_path, dead_letter_path=Path(STATE["output_dir"]) / "temp_dl.ndjson")
+        is_schema_valid, schema_errors = val.validate(ues_event)
+        val.close()
+
+        return {
+            "valid": is_schema_valid and len(errors) == 0,
+            "matched_detection": is_match,
+            "errors": schema_errors,
+            "warnings": warnings,
+            "detected_format": parser.log_format,
+            "extracted_fields": extracted,
+            "normalized_event": ues_event,
+            "vendor_attributes": normalized_core.get("vendor_attributes", {}),
+            "raw_hash": raw_hash,
+            "event_id": event_id,
+        }
+
+    # ------------------------------------------------------------------
+    # Crosswalk Translation Endpoints
+    # ------------------------------------------------------------------
+
+    @app.post("/api/events/crosswalk")
+    async def translate_event_crosswalk(req: CrosswalkRequest):
+        """Translate a UES event dict to OCSF and ECS representations."""
+        from ulpf.crosswalk.ocsf import to_ocsf
+        from ulpf.crosswalk.ecs import to_ecs
+
+        event = req.event
+        return {
+            "ocsf": to_ocsf(event),
+            "ecs": to_ecs(event),
+        }
+
+    @app.get("/api/events/{event_id}/crosswalk")
+    async def get_event_crosswalk(event_id: str, format: str = Query("all", pattern="^(all|ocsf|ecs)$")):
+        """Fetch indexed event and return OCSF/ECS crosswalk translation."""
+        from ulpf.crosswalk.ocsf import to_ocsf
+        from ulpf.crosswalk.ecs import to_ecs
+
+        indexer: EventIndexer = STATE["indexer"]
+        event = indexer.get_event_by_id(event_id)
+        if not event:
+            raise HTTPException(status_code=404, detail=f"Event '{event_id}' not found")
+
+        if format == "ocsf":
+            return {"ocsf": to_ocsf(event)}
+        elif format == "ecs":
+            return {"ecs": to_ecs(event)}
+        return {
+            "ocsf": to_ocsf(event),
+            "ecs": to_ecs(event),
+        }
+
+    # ------------------------------------------------------------------
     # Analytics Endpoints
     # ------------------------------------------------------------------
 
@@ -524,13 +810,19 @@ def create_app(
     @app.get("/api/stream")
     async def stream_events():
         """
-        Server-Sent Events (SSE) stream pushing newly ingested events in real time.
+        Server-Sent Events (SSE) stream pushing newly ingested events,
+        connection telemetry, and source health metrics in real time.
         """
         ndjson_path = STATE["output_dir"] / "events.ndjson"
 
         async def event_generator():
             last_pos = ndjson_path.stat().st_size if ndjson_path.exists() else 0
+            tick_counter = 0
+
             while True:
+                now_iso = datetime.now(timezone.utc).isoformat()
+
+                # 1. Stream new ingested events
                 if ndjson_path.exists():
                     current_size = ndjson_path.stat().st_size
                     if current_size > last_pos:
@@ -540,12 +832,72 @@ def create_app(
                                 line_str = line.strip()
                                 if line_str:
                                     try:
-                                        # Parse and sync
                                         event_data = json.loads(line_str)
-                                        yield f"data: {json.dumps(event_data)}\n\n"
+                                        # Yield typed envelope
+                                        envelope = {
+                                            "type": "event_ingested",
+                                            "timestamp": now_iso,
+                                            "data": event_data,
+                                        }
+                                        yield f"data: {json.dumps(envelope)}\n\n"
                                     except Exception:
                                         pass
                             last_pos = f.tell()
+
+                # 2. Periodic state broadcasts (~every 1.5s, 15 ticks of 0.1s)
+                tick_counter += 1
+                if tick_counter >= 15:
+                    tick_counter = 0
+
+                    # 2a. Live Connection updates if monitor is active
+                    if "live_monitor" in STATE and STATE["live_monitor"] is not None:
+                        monitor = STATE["live_monitor"]
+                        if monitor.is_running():
+                            try:
+                                conns = monitor.get_active_connections()
+                                stats = monitor.get_stats()
+                                conn_envelope = {
+                                    "type": "connection_update",
+                                    "timestamp": now_iso,
+                                    "data": {
+                                        "connections": conns,
+                                        "stats": stats,
+                                        "count": len(conns),
+                                    },
+                                }
+                                yield f"data: {json.dumps(conn_envelope)}\n\n"
+                            except Exception as e:
+                                logger.warning(f"SSE connection_update failed: {e}")
+
+                    # 2b. Source health & metrics update
+                    if "source_manager" in STATE and STATE["source_manager"] is not None:
+                        try:
+                            sm = STATE["source_manager"]
+                            sources_envelope = {
+                                "type": "source_health_update",
+                                "timestamp": now_iso,
+                                "data": {
+                                    "sources": sm.list_sources(),
+                                    "metrics": sm.get_pipeline_metrics(),
+                                },
+                            }
+                            yield f"data: {json.dumps(sources_envelope)}\n\n"
+                        except Exception as e:
+                            logger.warning(f"SSE source_health_update failed: {e}")
+
+                    # 2c. Overall dashboard stats update
+                    if "indexer" in STATE and STATE["indexer"] is not None:
+                        try:
+                            idx = STATE["indexer"]
+                            stats_envelope = {
+                                "type": "metrics_update",
+                                "timestamp": now_iso,
+                                "data": idx.get_stats(),
+                            }
+                            yield f"data: {json.dumps(stats_envelope)}\n\n"
+                        except Exception as e:
+                            logger.warning(f"SSE metrics_update failed: {e}")
+
                 await asyncio.sleep(0.1)
 
         return StreamingResponse(
@@ -566,7 +918,6 @@ def create_app(
         """Start real-time OS event and process monitoring (sub-second resolution)."""
         from ulpf.collectors.live_monitor import LiveSystemMonitor
 
-        global LIVE_MONITOR
         if "live_monitor" not in STATE or STATE["live_monitor"] is None:
             STATE["live_monitor"] = LiveSystemMonitor(
                 output_dir=STATE["output_dir"],
@@ -603,8 +954,11 @@ def create_app(
             "running": False,
             "events_captured": 0,
             "tracked_processes": 0,
+            "tracked_connections": 0,
             "interval_ms": 250,
             "platform": sys.platform,
+            "permission_error": None,
+            "scan_status": "stopped",
         }
 
     @app.get("/api/live-monitor/events")
@@ -619,9 +973,20 @@ def create_app(
     async def get_live_monitor_connections():
         """Get currently active process outbound network connections (only when monitor is active)."""
         if "live_monitor" in STATE and STATE["live_monitor"] is not None:
-            if STATE["live_monitor"].is_running():
-                return {"connections": STATE["live_monitor"].get_active_connections()}
-        return {"connections": []}
+            monitor = STATE["live_monitor"]
+            if monitor.is_running():
+                return {
+                    "connections": monitor.get_active_connections(),
+                    "stats": monitor.get_stats(),
+                    "running": True,
+                    "permission_error": monitor.permission_error,
+                }
+        return {
+            "connections": [],
+            "stats": {"running": False, "tracked_connections": 0},
+            "running": False,
+            "permission_error": None,
+        }
 
     @app.get("/api/live-monitor/processes")
     async def get_live_monitor_processes(limit: int = 150):
@@ -665,11 +1030,12 @@ def _find_sample_logs_dir() -> Path | None:
     return None
 
 
-def _is_ulpf_running(host: str, port: int) -> bool:
+def _is_ulpf_running(host: str = "127.0.0.1", port: int = 8000) -> bool:
     """Check if an instance of ULPF dashboard is already listening and responsive."""
     import urllib.request
+    check_host = "127.0.0.1" if host in ("0.0.0.0", "::", "localhost") else host
     try:
-        url = f"http://{host}:{port}/api/stats"
+        url = f"http://{check_host}:{port}/api/stats"
         req = urllib.request.Request(url, headers={"User-Agent": "ULPF-Launcher"})
         with urllib.request.urlopen(req, timeout=1.0) as resp:
             return resp.status == 200
@@ -677,7 +1043,19 @@ def _is_ulpf_running(host: str, port: int) -> bool:
         return False
 
 
-def _find_available_port(host: str, start_port: int = 8000, max_attempts: int = 50) -> int:
+def _wait_for_server(host: str = "127.0.0.1", port: int = 8000, timeout: float = 6.0) -> bool:
+    """Poll until the FastAPI server is accepting connections."""
+    import time
+    start = time.time()
+    check_host = "127.0.0.1" if host in ("0.0.0.0", "::", "localhost") else host
+    while time.time() - start < timeout:
+        if _is_ulpf_running(check_host, port):
+            return True
+        time.sleep(0.1)
+    return False
+
+
+def _find_available_port(host: str = "127.0.0.1", start_port: int = 8000, max_attempts: int = 50) -> int:
     """Find the first open TCP port starting from start_port."""
     import socket
     for p in range(start_port, start_port + max_attempts):
@@ -734,9 +1112,11 @@ def main(output_dir: str | None, host: str, port: int, reload: bool, open_browse
             except Exception as e:
                 click.echo(f"[!] Note: Sample log bootstrap skipped ({e})")
 
+    check_host = "127.0.0.1" if host in ("0.0.0.0", "::") else host
+
     # 1. Check if ULPF dashboard is already running on this port
     if _is_ulpf_running(host, port):
-        url = f"http://{host}:{port}"
+        url = f"http://{check_host}:{port}"
         click.echo(f"============================================================")
         click.echo(f"  [+] ULPF Operations Dashboard is ALREADY running at: {url}")
         click.echo(f"  Connected Output Directory: {resolved.resolve()}")
@@ -756,7 +1136,7 @@ def main(output_dir: str | None, host: str, port: int, reload: bool, open_browse
             port = _find_available_port(host, start_port=port + 1)
             click.echo(f"[*] Port {original_port} is in use. Switched to available port: {port}")
 
-    url = f"http://{host}:{port}"
+    url = f"http://{check_host}:{port}"
     click.echo(f"============================================================")
     click.echo(f"  ULPF Operations Dashboard running at: {url}")
     click.echo(f"  Connected Output Directory: {resolved.resolve()}")
@@ -765,13 +1145,24 @@ def main(output_dir: str | None, host: str, port: int, reload: bool, open_browse
 
     if open_browser:
         def _launch_browser():
-            import time
-            time.sleep(1.0)
+            _wait_for_server(check_host, port, timeout=6.0)
             webbrowser.open(url)
         threading.Thread(target=_launch_browser, daemon=True).start()
 
     app_instance = create_app(output_dir=resolved, host=host, port=port)
-    uvicorn.run(app_instance, host=host, port=port, reload=reload)
+    
+    # Check if stdout/stderr are interactive or if we need safe logging
+    use_safe_log = (sys.stdout is None) or (not hasattr(sys.stdout, "isatty")) or (not sys.stdout.isatty())
+    config = uvicorn.Config(
+        app=app_instance,
+        host=host,
+        port=port,
+        reload=reload,
+        log_config=None if use_safe_log else uvicorn.config.LOGGING_CONFIG,
+        log_level="info",
+    )
+    server = uvicorn.Server(config=config)
+    server.run()
 
 
 if __name__ == "__main__":

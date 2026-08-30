@@ -146,18 +146,26 @@
     <div id="proTabsBar" class="pro-tabs-bar">
       <div class="pro-tabs">
         <button class="pro-tab active" data-tab="events">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><line x1="3" y1="9" x2="21" y2="9"></line><line x1="9" y1="21" x2="9" y2="9"></line></svg>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="8" y1="6" x2="21" y2="6"></line><line x1="8" y1="12" x2="21" y2="12"></line><line x1="8" y1="18" x2="21" y2="18"></line><line x1="3" y1="6" x2="3.01" y2="6"></line><line x1="3" y1="12" x2="3.01" y2="12"></line><line x1="3" y1="18" x2="3.01" y2="18"></line></svg>
           Events Grid
         </button>
-        <button class="pro-tab" data-tab="livehost">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
-          ⚡ Live Host Logs
-          <span id="tabLiveHostDot" class="live-monitor-dot" style="display: none; margin-left: 4px; width: 6px; height: 6px;"></span>
+        <button class="pro-tab" data-tab="sources">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="2" width="20" height="8" rx="2" ry="2"></rect><rect x="2" y="14" width="20" height="8" rx="2" ry="2"></rect><line x1="6" y1="6" x2="6.01" y2="6"></line><line x1="6" y1="18" x2="6.01" y2="18"></line></svg>
+          Sources & Onboarding
         </button>
         <button class="pro-tab" data-tab="deadletter">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="7.86 2 16.14 2 22 7.86 22 16.14 16.14 22 7.86 22 2 16.14 2 7.86 7.86 2"></polygon><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
           Dead-Letter Quarantine
           <span id="tabDeadLetterBadge" class="tab-badge">0</span>
+        </button>
+        <button class="pro-tab" data-tab="connections" id="tabConnectionsBtn">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="12" cy="12" r="10"></circle>
+            <line x1="2" y1="12" x2="22" y2="12"></line>
+            <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path>
+          </svg>
+          Live Sockets & DB
+          <span id="tabConnectionsBadge" class="tab-badge" style="background: rgba(6, 182, 212, 0.15); color: var(--accent-cyan); display: none;">0</span>
         </button>
         <button class="pro-tab" data-tab="parsers">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"></path></svg>
@@ -192,7 +200,6 @@
           <span class="chip active" data-filter="all">All Events</span>
           <span class="chip" data-filter="blocked">Blocked / Denied</span>
           <span class="chip" data-filter="high_sev">High Severity (≥7)</span>
-          <span class="chip" data-filter="live_host" style="border-color: var(--accent); color: var(--accent);">⚡ Live Host Logs</span>
         </div>
       </div>
 
@@ -304,132 +311,258 @@
       </div>
     </section>
 
-    <!-- Panel 4: Live Host & Process Monitor (Dedicated Workspace) -->
-    <section id="liveHostPanel" style="display: none;">
-      <!-- Host Monitor Control Bar -->
-      <div class="host-monitor-toolbar">
-        <div class="host-title-group">
-          <h3>
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
-            Live Host & Process Monitor
-          </h3>
-          <p class="host-subtitle">Isolated telemetry of local process executions (e.g. VALORANT, Chrome, Discord), active internet socket connections, and Windows system events.</p>
+    <!-- Tab 4: Sources & Declarative Onboarding -->
+    <section id="tabContentSources" class="tab-content" style="display: none;">
+      <div class="sources-header-bar">
+        <div class="sources-title-group">
+          <h2>
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="2"><rect x="2" y="2" width="20" height="8" rx="2" ry="2"></rect><rect x="2" y="14" width="20" height="8" rx="2" ry="2"></rect><line x1="6" y1="6" x2="6.01" y2="6"></line><line x1="6" y1="18" x2="6.01" y2="18"></line></svg>
+            Enterprise Log Sources & Declarative Onboarding
+          </h2>
+          <div class="sources-subtitle">Manage perimeter log producers, check health telemetry, and onboard new vendors via no-code configuration.</div>
         </div>
-        <div class="host-controls">
-          <button id="btnBackToEvents" class="btn-back-events" title="Return to Main Events Grid">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <line x1="19" y1="12" x2="5" y2="12"></line>
-              <polyline points="12 19 5 12 12 5"></polyline>
-            </svg>
-            <span>Back to Events Grid</span>
-          </button>
-          <button id="btnToggleHostMonitor" class="btn-live-host-toggle">
-            <span class="live-monitor-dot"></span>
-            <span id="btnToggleHostText">Start Live Capture</span>
-          </button>
-          <button id="btnRefreshHostData" class="btn-icon" title="Refresh Snapshot">
-            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"></polyline><polyline points="1 20 1 14 7 14"></polyline><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path></svg>
+        <div class="sources-header-actions">
+          <button id="openOnboardingBtn" class="btn btn-primary">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+            + Onboard New Source (No-Code)
           </button>
         </div>
       </div>
 
-      <!-- Host Stats Grid -->
-      <div class="host-stats-grid">
-        <div class="host-stat-card">
-          <div class="host-stat-label">HOST SYSTEM</div>
-          <div id="hostStatName" class="host-stat-val">--</div>
-          <div id="hostStatUser" class="host-stat-sub">User: --</div>
+      <!-- Sources Overview Metric Strip -->
+      <div class="source-metrics-strip">
+        <div class="src-stat-box">
+          <span class="src-stat-label">Active Sources</span>
+          <span id="srcStatActive" class="src-stat-val">11</span>
         </div>
-        <div class="host-stat-card">
-          <div class="host-stat-label">RUNNING PROCESSES</div>
-          <div id="hostStatProcs" class="host-stat-val">0</div>
-          <div class="host-stat-sub">Active OS tasks</div>
+        <div class="src-stat-box">
+          <span class="src-stat-label">Total Ingestion (EPS)</span>
+          <span id="srcStatEPS" class="src-stat-val">--</span>
         </div>
-        <div class="host-stat-card">
-          <div class="host-stat-label">OUTBOUND SOCKETS</div>
-          <div id="hostStatConns" class="host-stat-val">0</div>
-          <div class="host-stat-sub">Active internet destinations</div>
+        <div class="src-stat-box">
+          <span class="src-stat-label">Pipeline Validity</span>
+          <span id="srcStatValidity" class="src-stat-val" style="color: var(--color-success);">100%</span>
         </div>
-        <div class="host-stat-card">
-          <div class="host-stat-label">CAPTURED EVENTS</div>
-          <div id="hostStatEvents" class="host-stat-val">0</div>
-          <div id="hostStatRate" class="host-stat-sub">Sub-second polling</div>
+        <div class="src-stat-box">
+          <span class="src-stat-label">Dead-Letter Count</span>
+          <span id="srcStatDLQ" class="src-stat-val">0</span>
         </div>
       </div>
 
-      <!-- Host Sub-Tabs Navigation -->
-      <div class="host-subtabs-bar">
-        <div class="host-subtabs">
-          <button class="host-subtab active" data-subtab="connections">
-            Active Sockets & Destination IPs (<span id="countSubConns">0</span>)
-          </button>
-          <button class="host-subtab" data-subtab="events">
-            Process Execution Stream (<span id="countSubEvents">0</span>)
-          </button>
-          <button class="host-subtab" data-subtab="processes">
-            Running Processes List (<span id="countSubProcs">0</span>)
-          </button>
-        </div>
-      </div>
-
-      <!-- Host Sub-Views -->
-      <div id="hostSubViewConnections" class="host-subview">
-        <div class="host-table-wrap">
-          <table class="host-table">
-            <thead>
-              <tr>
-                <th>PROCESS</th>
-                <th>PID</th>
-                <th>SOURCE IP / PORT</th>
-                <th>DESTINATION IP / PORT</th>
-                <th>PROTO</th>
-                <th>STATE</th>
-              </tr>
-            </thead>
-            <tbody id="hostConnectionsTableBody">
-              <tr><td colspan="6" class="host-empty">Click "Start Live Capture" or refresh to inspect active socket destinations.</td></tr>
-            </tbody>
-          </table>
-        </div>
-      </div>
-
-      <div id="hostSubViewEvents" class="host-subview" style="display: none;">
-        <div class="host-table-wrap">
-          <table class="host-table">
-            <thead>
-              <tr>
-                <th>TIME</th>
-                <th>ACTION</th>
-                <th>PROCESS / ITEM</th>
-                <th>USER</th>
-                <th>ACTIVITY / MESSAGE</th>
-              </tr>
-            </thead>
-            <tbody id="hostEventsTableBody">
-              <tr><td colspan="5" class="host-empty">No host events captured yet. Click "Start Live Capture" to record process executions.</td></tr>
-            </tbody>
-          </table>
-        </div>
-      </div>
-
-      <div id="hostSubViewProcesses" class="host-subview" style="display: none;">
-        <div class="host-table-wrap">
-          <table class="host-table">
-            <thead>
-              <tr>
-                <th>PID</th>
-                <th>PROCESS NAME</th>
-                <th>EXECUTABLE PATH</th>
-              </tr>
-            </thead>
-            <tbody id="hostProcessesTableBody">
-              <tr><td colspan="3" class="host-empty">Loading processes snapshot...</td></tr>
-            </tbody>
-          </table>
-        </div>
+      <!-- Sources List Table / Cards -->
+      <div class="sources-table-wrap">
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>SOURCE NAME / VENDOR</th>
+              <th>TYPE / FORMAT</th>
+              <th>HEALTH</th>
+              <th>EVENTS INGESTED</th>
+              <th>STATUS</th>
+              <th>LAST EVENT</th>
+              <th>ACTIONS</th>
+            </tr>
+          </thead>
+          <tbody id="sourcesTableBody">
+            <tr><td colspan="7" class="host-empty">Loading log sources registry...</td></tr>
+          </tbody>
+        </table>
       </div>
     </section>
 
+    <!-- Tab 5: Live Sockets & Database Telemetry Panel -->
+    <section id="tabContentConnections" class="tab-panel" style="display: none;">
+      <!-- Hero Header Bar -->
+      <div class="conn-hero-header">
+        <div class="conn-title-wrap">
+          <div class="conn-radar-icon">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <circle cx="12" cy="12" r="10"></circle>
+              <line x1="12" y1="2" x2="12" y2="12"></line>
+              <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path>
+            </svg>
+          </div>
+          <div>
+            <h2>Live Sockets & DB Connection Inspector</h2>
+            <div class="conn-sub">Real-time host socket inspector capturing MySQL (3306), Postgres, Redis, HTTP APIs, and outbound telemetry.</div>
+          </div>
+        </div>
+
+        <div class="conn-actions-bar">
+          <div id="connStreamStatus" class="live-badge" style="display: inline-flex; font-size: 0.76rem; padding: 4px 10px;">
+            <span class="pulse-dot"></span> <span id="connStreamStatusText">Monitor Inactive</span>
+          </div>
+          <button id="btnToggleLiveMonitor" class="btn-conn-start" title="Toggle Live System Monitor">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>
+            <span id="btnToggleLiveMonitorText">Start Live Monitor</span>
+          </button>
+          <button id="btnRefreshConnections" class="btn-conn-refresh" title="Fetch snapshot now">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"></polyline><polyline points="1 20 1 14 7 14"></polyline><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path></svg>
+            Refresh
+          </button>
+          <button id="btnCopyAllConns" class="btn-conn-refresh" title="Copy filtered connections list">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
+            Copy List
+          </button>
+        </div>
+      </div>
+
+      <!-- Permission / Restriction Alert Bar (hidden unless error) -->
+      <div id="connPermissionAlert" class="alert-banner" style="display: none; background: rgba(239, 68, 68, 0.1); border: 1px solid rgba(239, 68, 68, 0.3); color: var(--color-danger); padding: 10px 14px; border-radius: 8px; margin-bottom: 14px; font-size: 0.82rem; align-items: center; gap: 8px;">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
+        <span id="connPermissionAlertText">AccessDenied: Elevated privileges required to scan OS socket connections.</span>
+      </div>
+
+      <!-- Cyber Metrics Grid -->
+      <div class="conn-metrics-grid">
+        <div class="conn-metric-card">
+          <div class="conn-card-icon blue">⚡</div>
+          <div class="conn-card-content">
+            <span class="conn-card-label">Active Sockets</span>
+            <span id="connStatTotal" class="conn-card-val">0</span>
+          </div>
+        </div>
+        <div class="conn-metric-card">
+          <div class="conn-card-icon amber">🗄️</div>
+          <div class="conn-card-content">
+            <span class="conn-card-label">Database Sessions (MySQL/DB)</span>
+            <span id="connStatDB" class="conn-card-val" style="color: #f59e0b;">0</span>
+          </div>
+        </div>
+        <div class="conn-metric-card">
+          <div class="conn-card-icon purple">🌐</div>
+          <div class="conn-card-content">
+            <span class="conn-card-label">Remote Endpoints</span>
+            <span id="connStatRemote" class="conn-card-val" style="color: #a855f7;">0</span>
+          </div>
+        </div>
+        <div class="conn-metric-card">
+          <div class="conn-card-icon green">⏱️</div>
+          <div class="conn-card-content">
+            <span class="conn-card-label">Last OS Scan</span>
+            <span id="connStatLastScan" class="conn-card-val" style="font-size: 0.95rem; color: var(--text-secondary);">--</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Filter Strip -->
+      <div class="conn-filter-strip">
+        <div class="conn-quick-chips" id="connFilterChips">
+          <span class="conn-chip active" data-conn-filter="clean">
+            <span>🛡️ Clean Active</span>
+            <span class="conn-chip-badge" id="badgeCleanCount">0</span>
+          </span>
+          <span class="conn-chip" data-conn-filter="db">
+            <span>🗄️ Databases (MySQL/DB)</span>
+            <span class="conn-chip-badge" id="badgeDBCount">0</span>
+          </span>
+          <span class="conn-chip" data-conn-filter="remote">
+            <span>🌐 Remote Endpoints</span>
+            <span class="conn-chip-badge" id="badgeRemoteCount">0</span>
+          </span>
+          <span class="conn-chip" data-conn-filter="localhost">
+            <span>💻 Localhost Only</span>
+          </span>
+          <span class="conn-chip" data-conn-filter="all">
+            <span>🔥 All Raw Sockets</span>
+          </span>
+        </div>
+
+        <div class="search-box" style="max-width: 320px;">
+          <svg class="search-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+          </svg>
+          <input type="text" id="connSearchInput" placeholder="Filter by IP, port, process, PID, service..." style="padding: 7px 12px 7px 32px; font-size: 0.8rem;">
+        </div>
+      </div>
+
+      <!-- Connections Table -->
+      <div class="conn-table-wrap">
+        <table class="conn-table">
+          <thead>
+            <tr>
+              <th style="min-width: 180px;">PROCESS / PID</th>
+              <th style="width: 80px;">PROTO</th>
+              <th style="min-width: 190px;">SOURCE ENDPOINT</th>
+              <th style="width: 30px; text-align: center;"></th>
+              <th style="min-width: 210px;">DESTINATION ENDPOINT</th>
+              <th style="min-width: 160px;">INFERRED SERVICE</th>
+              <th style="width: 110px;">STATE</th>
+              <th style="width: 100px;">SCOPE</th>
+              <th style="width: 70px; text-align: center;">ACTIONS</th>
+            </tr>
+          </thead>
+          <tbody id="connectionsTableBody">
+            <tr><td colspan="9" class="host-empty">Live Socket Monitor is inactive. Click "Start Live Monitor" above to begin real-time socket inspection.</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+  </div>
+
+  <!-- Declarative Source Onboarding Wizard Modal -->
+  <div id="onboardingModal" class="modal-backdrop">
+    <div class="modal-card" style="max-width: 900px;">
+      <div class="modal-header">
+        <div class="modal-title-group">
+          <h2>
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="2"><rect x="2" y="2" width="20" height="8" rx="2" ry="2"></rect><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+            No-Code Log Source Onboarding Wizard
+          </h2>
+          <div style="font-size: 0.8rem; color: var(--text-muted); margin-top: 4px;">
+            Onboard any new vendor log format (Key-Value, CSV, JSON, Regex, Delimiter) purely through configuration — zero Python coding required.
+          </div>
+        </div>
+        <button id="closeOnboardingBtn" class="btn-icon" aria-label="Close Wizard (Esc)">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+        </button>
+      </div>
+
+      <div class="modal-body" style="max-height: 75vh; overflow-y: auto;">
+        <!-- Step 1: Sample Event Input -->
+        <div class="wizard-step">
+          <label style="font-weight: 600; display: block; margin-bottom: 6px;">1. Paste Sample Raw Log Record</label>
+          <textarea id="wizardSampleEvent" class="code-editor-input" rows="3" placeholder='e.g. CEF:0|MyVendor|CustomFirewall|1.0|100|Deny|5|src=10.0.0.1 dst=192.168.1.10 spt=44321 dpt=443 act=drop user=alice'></textarea>
+          <div style="display: flex; gap: 8px; margin-top: 8px;">
+            <button id="wizardInferBtn" class="pagination-btn" style="background: var(--accent); color: white; border: none;">⚡ Auto-Infer Configuration</button>
+            <button id="wizardLoadSampleKVBtn" class="pagination-btn">Load Sample Key-Value</button>
+            <button id="wizardLoadSampleCSVBtn" class="pagination-btn">Load Sample CSV</button>
+            <button id="wizardLoadSampleJSONBtn" class="pagination-btn">Load Sample JSON</button>
+          </div>
+        </div>
+
+        <!-- Step 2: Declarative YAML Definition Editor -->
+        <div class="wizard-step" style="margin-top: 16px;">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+            <label style="font-weight: 600;">2. Declarative Source Definition (YAML)</label>
+            <button id="wizardTestBtn" class="btn btn-primary" style="padding: 4px 12px; font-size: 0.82rem;">▶ Test Mapping Against Sample</button>
+          </div>
+          <textarea id="wizardConfigYaml" class="code-editor-input mono-text" rows="12" style="font-size: 0.8rem; font-family: monospace;"></textarea>
+        </div>
+
+        <!-- Step 3: Live Test Output Preview -->
+        <div id="wizardTestResults" class="wizard-step" style="margin-top: 16px; display: none;">
+          <label style="font-weight: 600; display: block; margin-bottom: 6px;">3. Live Test & Verification Results</label>
+          <div id="wizardStatusBadge" style="margin-bottom: 8px;"></div>
+          <div class="traceability-split" style="max-height: 250px;">
+            <div class="split-pane">
+              <div class="pane-header"><span>EXTRACTED FIELDS</span></div>
+              <pre id="wizardExtractedJson" class="code-viewer" style="font-size: 0.75rem;"></pre>
+            </div>
+            <div class="split-pane">
+              <div class="pane-header"><span>NORMALIZED UES EVENT</span></div>
+              <pre id="wizardNormalizedJson" class="code-viewer" style="font-size: 0.75rem;"></pre>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="modal-footer" style="display: flex; justify-content: flex-end; gap: 10px; padding: 14px 20px; border-top: 1px solid var(--border-color);">
+        <button id="cancelOnboardingBtn" class="pagination-btn">Cancel</button>
+        <button id="saveOnboardingBtn" class="btn btn-primary" style="background: var(--color-success); border-color: var(--color-success);">✔ Save & Activate Source</button>
+      </div>
+    </div>
   </div>
 
   <!-- Traceability Side-by-Side Split Inspector Modal -->
@@ -465,10 +598,14 @@
             <pre id="inspectRawPayload" class="code-viewer"></pre>
           </div>
 
-          <!-- Right Pane: Validated UES Schema JSON -->
+          <!-- Right Pane: Validated UES Schema JSON & Crosswalk View -->
           <div class="split-pane">
             <div class="pane-header">
-              <span>NORMALIZED UNIVERSAL EVENT SCHEMA (UES JSON)</span>
+              <div style="display: flex; gap: 6px; align-items: center;">
+                <button id="inspectTabUesBtn" class="pagination-btn" style="font-weight: 700; background: var(--accent); color: white; border: none;">UES (Normalized)</button>
+                <button id="inspectTabOcsfBtn" class="pagination-btn">OCSF (v1.1)</button>
+                <button id="inspectTabEcsBtn" class="pagination-btn">ECS (v8.11)</button>
+              </div>
               <button id="copyJsonBtn" class="pagination-btn">Copy JSON</button>
             </div>
             <pre id="inspectUesJson" class="code-viewer"></pre>

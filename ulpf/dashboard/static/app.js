@@ -812,13 +812,17 @@
   }
 
   // --------------------------------------------------------------------------
-  // Event Inspection & Traceability Split Modal
   // --------------------------------------------------------------------------
+  // Event Inspection, Traceability & Crosswalk Split Modal
+  // --------------------------------------------------------------------------
+  let currentInspectedEvent = null;
+
   async function openEventInspector(eventId) {
     try {
       const res = await fetch(`/api/events/${eventId}`);
       if (!res.ok) throw new Error("Event not found");
       const data = await res.json();
+      currentInspectedEvent = data;
 
       el.inspectEventId.textContent = data.event_id;
       el.inspectParser.textContent = data.parser_name;
@@ -828,9 +832,65 @@
       el.inspectRawPayload.textContent = data.raw_payload;
       el.inspectUesJson.textContent = JSON.stringify(data.normalized, null, 2);
 
+      // Reset tabs styling
+      const tabUes = document.getElementById("inspectTabUesBtn");
+      const tabOcsf = document.getElementById("inspectTabOcsfBtn");
+      const tabEcs = document.getElementById("inspectTabEcsBtn");
+      if (tabUes) { tabUes.style.background = "var(--accent)"; tabUes.style.color = "white"; }
+      if (tabOcsf) { tabOcsf.style.background = ""; tabOcsf.style.color = ""; }
+      if (tabEcs) { tabEcs.style.background = ""; tabEcs.style.color = ""; }
+
       el.inspectorModal.classList.add("open");
     } catch (err) {
       alert("Failed to load event details: " + err.message);
+    }
+  }
+
+  function setupCrosswalkTabs() {
+    const tabUes = document.getElementById("inspectTabUesBtn");
+    const tabOcsf = document.getElementById("inspectTabOcsfBtn");
+    const tabEcs = document.getElementById("inspectTabEcsBtn");
+
+    if (tabUes) {
+      tabUes.addEventListener("click", () => {
+        if (!currentInspectedEvent) return;
+        tabUes.style.background = "var(--accent)"; tabUes.style.color = "white";
+        if (tabOcsf) { tabOcsf.style.background = ""; tabOcsf.style.color = ""; }
+        if (tabEcs) { tabEcs.style.background = ""; tabEcs.style.color = ""; }
+        el.inspectUesJson.textContent = JSON.stringify(currentInspectedEvent.normalized, null, 2);
+      });
+    }
+
+    if (tabOcsf) {
+      tabOcsf.addEventListener("click", async () => {
+        if (!currentInspectedEvent) return;
+        tabOcsf.style.background = "var(--accent)"; tabOcsf.style.color = "white";
+        if (tabUes) { tabUes.style.background = ""; tabUes.style.color = ""; }
+        if (tabEcs) { tabEcs.style.background = ""; tabEcs.style.color = ""; }
+        try {
+          const res = await fetch(`/api/events/${currentInspectedEvent.event_id}/crosswalk?format=ocsf`);
+          const d = await res.json();
+          el.inspectUesJson.textContent = JSON.stringify(d.ocsf, null, 2);
+        } catch (e) {
+          el.inspectUesJson.textContent = "Error fetching OCSF format: " + e.message;
+        }
+      });
+    }
+
+    if (tabEcs) {
+      tabEcs.addEventListener("click", async () => {
+        if (!currentInspectedEvent) return;
+        tabEcs.style.background = "var(--accent)"; tabEcs.style.color = "white";
+        if (tabUes) { tabUes.style.background = ""; tabUes.style.color = ""; }
+        if (tabOcsf) { tabOcsf.style.background = ""; tabOcsf.style.color = ""; }
+        try {
+          const res = await fetch(`/api/events/${currentInspectedEvent.event_id}/crosswalk?format=ecs`);
+          const d = await res.json();
+          el.inspectUesJson.textContent = JSON.stringify(d.ecs, null, 2);
+        } catch (e) {
+          el.inspectUesJson.textContent = "Error fetching ECS format: " + e.message;
+        }
+      });
     }
   }
 
@@ -839,191 +899,104 @@
   }
 
   // --------------------------------------------------------------------------
-  // Live SSE Streaming
+  // Live SSE Streaming & Real-Time Broadcast Dispatcher
   // --------------------------------------------------------------------------
+  let sseReconnectTimer = null;
+
   function setupSSE() {
     const liveBadge = document.getElementById("liveStreamBadge");
     if (!window.EventSource) return;
 
+    if (state.sseEventSource) {
+      try { state.sseEventSource.close(); } catch (e) {}
+      state.sseEventSource = null;
+    }
+
     const source = new EventSource("/api/stream");
+    state.sseEventSource = source;
 
     source.onopen = () => {
       state.sseConnected = true;
-      if (liveBadge) liveBadge.style.display = "inline-flex";
+      state.sseReconnectAttempts = 0;
+      if (liveBadge) {
+        liveBadge.style.display = "inline-flex";
+        liveBadge.innerHTML = `<span class="pulse-dot"></span> Stream Live`;
+        liveBadge.style.borderColor = "rgba(16, 185, 129, 0.4)";
+      }
     };
 
     source.onmessage = (e) => {
       try {
-        const newEvent = JSON.parse(e.data);
-        // Prepend to list if on page 1 without search filter
-        if (state.currentPage === 1 && !state.filters.search) {
-          state.events.unshift(newEvent);
-          state.totalEvents += 1;
-          virtualScroller.render();
-          renderPagination();
+        const payload = JSON.parse(e.data);
+
+        // 1. Live Connection Telemetry update
+        if (payload && payload.type === "connection_update") {
+          handleConnectionUpdate(payload.data);
+          return;
         }
-        fetchStats();
+
+        // 2. Source Health & Metrics update
+        if (payload && payload.type === "source_health_update") {
+          handleSourceHealthUpdate(payload.data);
+          return;
+        }
+
+        // 3. Top Metrics update
+        if (payload && payload.type === "metrics_update") {
+          if (payload.data) {
+            const s = payload.data;
+            const totalEl = document.getElementById("statTotalEvents");
+            const blockedEl = document.getElementById("statBlockedEvents");
+            const highSevEl = document.getElementById("statHighSeverity");
+            const velocityEl = document.getElementById("statVelocity");
+            if (totalEl) totalEl.textContent = (s.total_events || 0).toLocaleString();
+            if (blockedEl) blockedEl.textContent = (s.blocked_events || 0).toLocaleString();
+            if (highSevEl) highSevEl.textContent = (s.high_severity_events || 0).toLocaleString();
+            if (velocityEl) velocityEl.textContent = `${s.events_last_1h || 0} / hr`;
+            const deadBadge = document.getElementById("tabDeadLetterBadge");
+            if (deadBadge) deadBadge.textContent = s.dead_letter_count || 0;
+          }
+          return;
+        }
+
+        // 4. Ingested Event (either payload.data or raw event object)
+        const newEvent = (payload && payload.type === "event_ingested") ? payload.data : payload;
+        if (newEvent && (newEvent.event_id || newEvent.schema_version)) {
+          if (state.currentPage === 1 && !state.filters.search) {
+            state.events.unshift(newEvent);
+            state.totalEvents += 1;
+            if (virtualScroller) virtualScroller.render();
+            renderPagination();
+          }
+          fetchStats();
+        }
       } catch (err) {}
     };
 
     source.onerror = () => {
       state.sseConnected = false;
-      if (liveBadge) liveBadge.style.display = "none";
+      if (liveBadge) {
+        liveBadge.style.display = "inline-flex";
+        liveBadge.innerHTML = `<span class="pulse-dot" style="background: #f59e0b;"></span> Reconnecting...`;
+        liveBadge.style.borderColor = "rgba(245, 158, 11, 0.4)";
+      }
+      try { source.close(); } catch (e) {}
+
+      // Auto-reconnect with exponential backoff (1s, 1.5s, 2.25s, max 10s)
+      if (!sseReconnectTimer) {
+        state.sseReconnectAttempts = (state.sseReconnectAttempts || 0) + 1;
+        const delay = Math.min(10000, 1000 * Math.pow(1.5, Math.min(state.sseReconnectAttempts, 6)));
+        sseReconnectTimer = setTimeout(() => {
+          sseReconnectTimer = null;
+          setupSSE();
+        }, delay);
+      }
     };
   }
 
   // --------------------------------------------------------------------------
-  // Live Host & Process Monitor Dedicated Workspace
+  // Tab Switching Management
   // --------------------------------------------------------------------------
-  let activeHostSubTab = "connections";
-
-  async function fetchHostData() {
-    try {
-      const [statusRes, connsRes, eventsRes, procsRes] = await Promise.all([
-        fetch("/api/live-monitor/status").then((r) => r.json()).catch(() => ({})),
-        fetch("/api/live-monitor/connections").then((r) => r.json()).catch(() => ({ connections: [] })),
-        fetch("/api/live-monitor/events").then((r) => r.json()).catch(() => ({ events: [] })),
-        fetch("/api/live-monitor/processes").then((r) => r.json()).catch(() => ({ processes: [] })),
-      ]);
-
-      // Update Header Stats
-      const statName = document.getElementById("hostStatName");
-      const statUser = document.getElementById("hostStatUser");
-      const statProcs = document.getElementById("hostStatProcs");
-      const statConns = document.getElementById("hostStatConns");
-      const statEvents = document.getElementById("hostStatEvents");
-      const btnToggle = document.getElementById("btnToggleHostMonitor");
-      const btnText = document.getElementById("btnToggleHostText");
-      const tabDot = document.getElementById("tabLiveHostDot");
-
-      if (statName) statName.textContent = statusRes.hostname || "Local Machine";
-      if (statUser) statUser.textContent = `User: ${statusRes.username || "-"}`;
-      if (statProcs) statProcs.textContent = (statusRes.tracked_processes || procsRes.processes?.length || 0).toLocaleString();
-      if (statConns) statConns.textContent = (connsRes.connections?.length || 0).toLocaleString();
-      if (statEvents) statEvents.textContent = (statusRes.events_captured || eventsRes.events?.length || 0).toLocaleString();
-
-      const countConns = document.getElementById("countSubConns");
-      const countEvents = document.getElementById("countSubEvents");
-      const countProcs = document.getElementById("countSubProcs");
-      if (countConns) countConns.textContent = connsRes.connections?.length || 0;
-      if (countEvents) countEvents.textContent = eventsRes.events?.length || 0;
-      if (countProcs) countProcs.textContent = procsRes.processes?.length || 0;
-
-      if (btnToggle && btnText) {
-        if (statusRes.running) {
-          btnToggle.classList.add("active");
-          btnText.textContent = `Capturing Active (${statusRes.interval_ms || 250}ms)`;
-          if (tabDot) tabDot.style.display = "inline-block";
-        } else {
-          btnToggle.classList.remove("active");
-          btnText.textContent = "Start Live Capture";
-          if (tabDot) tabDot.style.display = "none";
-        }
-      }
-
-      // Render Active Connections Table
-      const connsTbody = document.getElementById("hostConnectionsTableBody");
-      if (connsTbody) {
-        if (!statusRes.running) {
-          connsTbody.innerHTML = `<tr><td colspan="6" class="host-empty" style="padding: 40px 20px;"><strong style="display:block; color:var(--text-primary); font-size: 0.95rem; margin-bottom:6px;">Live Capture Inactive</strong>Click <strong>Start Live Capture</strong> above to begin collecting and streaming active process sockets.</td></tr>`;
-        } else {
-          const conns = connsRes.connections || [];
-          if (conns.length === 0) {
-            connsTbody.innerHTML = `<tr><td colspan="6" class="host-empty">No active outbound connections. Start Live Capture or open an app to inspect.</td></tr>`;
-          } else {
-            connsTbody.innerHTML = conns
-              .map((c) => {
-                const proc = escapeHtml(c.process_name || "Unknown");
-                const pid = c.pid || "-";
-                const src = `${c.src_ip}:${c.src_port}`;
-                const dst = `${c.dst_ip}:${c.dst_port}`;
-                const proto = (c.proto || "tcp").toUpperCase();
-                return `
-                  <tr>
-                    <td><strong style="color: var(--text-primary);">${proc}</strong></td>
-                    <td class="mono-text" style="color: var(--text-muted);">${pid}</td>
-                    <td class="mono-text">${escapeHtml(src)}</td>
-                    <td class="mono-text" style="color: var(--accent); font-weight: 600;">${escapeHtml(dst)}</td>
-                    <td><span class="badge badge-subtle">${proto}</span></td>
-                    <td><span class="badge badge-allow">ACTIVE</span></td>
-                  </tr>
-                `;
-              })
-              .join("");
-          }
-        }
-      }
-
-      // Render Host Events Table
-      const eventsTbody = document.getElementById("hostEventsTableBody");
-      if (eventsTbody) {
-        if (!statusRes.running) {
-          eventsTbody.innerHTML = `<tr><td colspan="5" class="host-empty" style="padding: 40px 20px;"><strong style="display:block; color:var(--text-primary); font-size: 0.95rem; margin-bottom:6px;">Live Capture Inactive</strong>Click <strong>Start Live Capture</strong> above to record process executions and terminations.</td></tr>`;
-        } else {
-          const evs = eventsRes.events || [];
-          if (evs.length === 0) {
-            eventsTbody.innerHTML = `<tr><td colspan="5" class="host-empty">No host events captured yet. Monitoring is active.</td></tr>`;
-          } else {
-            eventsTbody.innerHTML = evs
-              .map((ev) => {
-                const ts = formatTimestamp(ev.timestamp);
-                const act = (ev.action || "event").toLowerCase();
-                let badge = `<span class="badge badge-unknown">${escapeHtml(act)}</span>`;
-                if (act.includes("start") || act.includes("launch")) badge = `<span class="badge badge-allow">Started</span>`;
-                else if (act.includes("stop") || act.includes("exit")) badge = `<span class="badge badge-deny">Exited</span>`;
-                else if (act.includes("permit") || act.includes("connect")) badge = `<span class="badge badge-allow">Connected</span>`;
-                else badge = `<span class="badge badge-cat-system">${escapeHtml(act)}</span>`;
-
-                const proc = escapeHtml(ev.process_name || "-");
-                const user = escapeHtml(ev.username || "-");
-                const msg = escapeHtml(ev.message || "-");
-                return `
-                  <tr>
-                    <td class="mono-text" style="font-size: 0.75rem; color: var(--text-muted);">${ts}</td>
-                    <td>${badge}</td>
-                    <td><strong>${proc}</strong></td>
-                    <td style="color: var(--text-secondary);">${user}</td>
-                    <td class="mono-text" style="color: var(--text-primary); font-size: 0.78rem;">${msg}</td>
-                  </tr>
-                `;
-              })
-              .join("");
-          }
-        }
-      }
-
-      // Render Processes Snapshot Table
-      const procsTbody = document.getElementById("hostProcessesTableBody");
-      if (procsTbody) {
-        if (!statusRes.running) {
-          procsTbody.innerHTML = `<tr><td colspan="3" class="host-empty" style="padding: 40px 20px;"><strong style="display:block; color:var(--text-primary); font-size: 0.95rem; margin-bottom:6px;">Live Capture Inactive</strong>Click <strong>Start Live Capture</strong> above to inspect running processes.</td></tr>`;
-        } else {
-          const procs = procsRes.processes || [];
-          if (procs.length === 0) {
-            procsTbody.innerHTML = `<tr><td colspan="3" class="host-empty">No processes returned.</td></tr>`;
-          } else {
-            procsTbody.innerHTML = procs
-              .map((p) => {
-                const pid = p.pid || "-";
-                const name = escapeHtml(p.name || "-");
-                const path = escapeHtml(p.path || "-");
-                return `
-                  <tr>
-                    <td class="mono-text" style="color: var(--text-muted); width: 80px;">${pid}</td>
-                    <td><strong style="color: var(--text-primary);">${name}</strong></td>
-                    <td class="mono-text" style="font-size: 0.75rem; color: var(--text-secondary);">${path}</td>
-                  </tr>
-                `;
-              })
-              .join("");
-          }
-        }
-      }
-    } catch (err) {
-      console.error("Failed to load live host data:", err);
-    }
-  }
-
   function switchTab(target) {
     state.activeTab = target;
     if (el.proTabsBar) {
@@ -1032,30 +1005,19 @@
       });
     }
 
+    const sourcesPanel = document.getElementById("tabContentSources");
+    const connectionsPanel = document.getElementById("tabContentConnections");
+    if (sourcesPanel) sourcesPanel.style.display = target === "sources" ? "block" : "none";
+    if (connectionsPanel) connectionsPanel.style.display = target === "connections" ? "block" : "none";
     if (el.eventsPanel) el.eventsPanel.style.display = target === "events" ? "flex" : "none";
     if (el.deadLetterPanel) el.deadLetterPanel.style.display = target === "deadletter" ? "block" : "none";
     if (el.parsersPanel) el.parsersPanel.style.display = target === "parsers" ? "block" : "none";
-    if (el.liveHostPanel) el.liveHostPanel.style.display = target === "livehost" ? "block" : "none";
-    if (el.filterSection) el.filterSection.style.display = target === "livehost" ? "none" : "block";
+    if (el.filterSection) el.filterSection.style.display = (target === "sources" || target === "connections") ? "none" : "block";
 
-    if (el.quickChips) {
-      el.quickChips.querySelectorAll(".chip").forEach((c) => {
-        const f = c.getAttribute("data-filter");
-        if (target === "livehost") {
-          c.classList.toggle("active", f === "live_host");
-        } else {
-          if (f === "live_host") {
-            c.classList.remove("active");
-          } else if (f === "all" && !state.filters.action && state.filters.severityMin === null) {
-            c.classList.add("active");
-          }
-        }
-      });
-    }
-
+    if (target === "sources") fetchSources();
+    if (target === "connections") fetchConnections();
     if (target === "deadletter") fetchDeadLetterRecords();
     if (target === "parsers") fetchParsersHealth();
-    if (target === "livehost") fetchHostData();
     if (target === "events") {
       if (virtualScroller) {
         virtualScroller.render();
@@ -1069,61 +1031,627 @@
     }
   }
 
-  function setupLiveHostPanel() {
-    const btnToggle = document.getElementById("btnToggleHostMonitor");
-    const btnRefresh = document.getElementById("btnRefreshHostData");
-    const subtabs = document.querySelectorAll(".host-subtab");
+  // --------------------------------------------------------------------------
+  // Toast Notification & Clipboard Helpers
+  // --------------------------------------------------------------------------
+  function showToast(message, type = "success") {
+    let toast = document.getElementById("ulpfToast");
+    if (!toast) {
+      toast = document.createElement("div");
+      toast.id = "ulpfToast";
+      toast.className = "ulpf-toast";
+      document.body.appendChild(toast);
+    }
+    toast.innerHTML = `
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="${type === 'success' ? '#10b981' : '#f59e0b'}" stroke-width="2">
+        <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline>
+      </svg>
+      <span>${escapeHtml(message)}</span>
+    `;
+    toast.classList.add("show");
+    clearTimeout(toast._timeout);
+    toast._timeout = setTimeout(() => {
+      toast.classList.remove("show");
+    }, 2200);
+  }
 
-    if (btnToggle) {
-      btnToggle.addEventListener("click", async () => {
-        const isRunning = btnToggle.classList.contains("active");
-        const endpoint = isRunning ? "/api/live-monitor/stop" : "/api/live-monitor/start?interval_ms=250";
+  function copyToClipboard(text, label = "Item") {
+    if (!text) return;
+    navigator.clipboard.writeText(text).then(() => {
+      showToast(`Copied ${label} to clipboard!`);
+    }).catch(() => {
+      const ta = document.createElement("textarea");
+      ta.value = text;
+      document.body.appendChild(ta);
+      ta.select();
+      document.execCommand("copy");
+      document.body.removeChild(ta);
+      showToast(`Copied ${label} to clipboard!`);
+    });
+  }
+
+  // --------------------------------------------------------------------------
+  // Live Sockets & Host Telemetry Management
+  // --------------------------------------------------------------------------
+  function handleConnectionUpdate(data) {
+    if (!data) return;
+    const conns = data.connections || [];
+    const stats = data.stats || {};
+    state.connections = conns;
+    state.liveMonitorRunning = !!stats.running;
+    state.liveMonitorStats = stats;
+
+    const dbConns = conns.filter((c) => {
+      const p = c.dst_port || c.src_port;
+      const svc = (c.service_inferred || "").toLowerCase();
+      return [3306, 5432, 1433, 1521, 27017, 6379].includes(p) || svc.includes("mysql") || svc.includes("database") || svc.includes("postgres") || svc.includes("redis");
+    });
+    const remoteConns = conns.filter((c) => !c.is_localhost);
+    const cleanConns = conns.filter((c) => !(c.pid === 0 && (c.state === "TIME_WAIT" || c.state === "CLOSE_WAIT")));
+
+    // Update connection badge on tab
+    const badge = document.getElementById("tabConnectionsBadge");
+    if (badge) {
+      badge.textContent = cleanConns.length;
+      badge.style.display = cleanConns.length > 0 ? "inline-block" : "none";
+    }
+
+    // Update Connection Metrics
+    const totalEl = document.getElementById("connStatTotal");
+    const dbEl = document.getElementById("connStatDB");
+    const remoteEl = document.getElementById("connStatRemote");
+    const lastScanEl = document.getElementById("connStatLastScan");
+
+    const badgeClean = document.getElementById("badgeCleanCount");
+    const badgeDB = document.getElementById("badgeDBCount");
+    const badgeRemote = document.getElementById("badgeRemoteCount");
+
+    if (totalEl) totalEl.textContent = conns.length.toLocaleString();
+    if (dbEl) dbEl.textContent = dbConns.length.toLocaleString();
+    if (remoteEl) remoteEl.textContent = remoteConns.length.toLocaleString();
+    if (badgeClean) badgeClean.textContent = cleanConns.length;
+    if (badgeDB) badgeDB.textContent = dbConns.length;
+    if (badgeRemote) badgeRemote.textContent = remoteConns.length;
+
+    if (lastScanEl) {
+      if (stats.last_scan_time) {
+        lastScanEl.textContent = formatTimestamp(stats.last_scan_time);
+      } else if (conns.length > 0) {
+        lastScanEl.textContent = "Live Stream (<5ms)";
+      } else {
+        lastScanEl.textContent = "--";
+      }
+    }
+
+    // Update control button and alert banner
+    updateLiveMonitorControls(stats);
+
+    // If active tab is connections, re-render table
+    if (state.activeTab === "connections") {
+      renderConnectionsTable();
+    }
+  }
+
+  function updateLiveMonitorControls(stats) {
+    const btn = document.getElementById("btnToggleLiveMonitor");
+    const statusText = document.getElementById("connStreamStatusText");
+    const statusBadge = document.getElementById("connStreamStatus");
+    const alertBox = document.getElementById("connPermissionAlert");
+    const alertText = document.getElementById("connPermissionAlertText");
+
+    const isRunning = !!(stats && stats.running);
+    const permError = stats && stats.permission_error;
+
+    if (btn) {
+      if (isRunning) {
+        btn.className = "btn-conn-stop";
+        btn.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><rect x="4" y="4" width="16" height="16" rx="2"></rect></svg> <span>Stop Monitor</span>`;
+      } else {
+        btn.className = "btn-conn-start";
+        btn.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg> <span>Start Live Monitor</span>`;
+      }
+    }
+
+    if (statusText) {
+      statusText.textContent = isRunning ? "Live Monitoring (0.5s)" : "Monitor Inactive";
+    }
+    if (statusBadge) {
+      if (isRunning) {
+        statusBadge.classList.add("active");
+        statusBadge.style.color = "var(--color-success)";
+      } else {
+        statusBadge.classList.remove("active");
+        statusBadge.style.color = "var(--text-muted)";
+      }
+    }
+
+    if (alertBox && alertText) {
+      if (permError) {
+        alertText.textContent = permError;
+        alertBox.style.display = "flex";
+      } else {
+        alertBox.style.display = "none";
+      }
+    }
+  }
+
+  async function fetchConnections() {
+    const refreshBtn = document.getElementById("btnRefreshConnections");
+    if (refreshBtn) refreshBtn.classList.add("spinning");
+    try {
+      const res = await fetch("/api/live-monitor/connections");
+      if (!res.ok) return;
+      const data = await res.json();
+      handleConnectionUpdate(data);
+      showToast("Refreshed socket snapshot", "success");
+    } catch (e) {
+      console.warn("fetchConnections error:", e);
+    } finally {
+      if (refreshBtn) {
+        setTimeout(() => refreshBtn.classList.remove("spinning"), 500);
+      }
+    }
+  }
+
+  function getFilteredConnections() {
+    let list = state.connections || [];
+    const filter = (state.connFilters && state.connFilters.filter) ? state.connFilters.filter : "clean";
+    const search = (state.connFilters && state.connFilters.search ? state.connFilters.search : "").toLowerCase();
+
+    if (filter === "clean") {
+      list = list.filter((c) => !(c.pid === 0 && (c.state === "TIME_WAIT" || c.state === "CLOSE_WAIT")));
+    } else if (filter === "db") {
+      list = list.filter((c) => {
+        const p = c.dst_port || c.src_port;
+        const svc = (c.service_inferred || "").toLowerCase();
+        return [3306, 5432, 1433, 1521, 27017, 6379].includes(p) || svc.includes("mysql") || svc.includes("database") || svc.includes("postgres") || svc.includes("redis");
+      });
+    } else if (filter === "remote") {
+      list = list.filter((c) => !c.is_localhost);
+    } else if (filter === "localhost") {
+      list = list.filter((c) => c.is_localhost);
+    }
+
+    if (search) {
+      list = list.filter((c) => {
+        const str = `${c.pid} ${c.process_name} ${c.src_ip} ${c.src_port} ${c.dst_ip} ${c.dst_port} ${c.service_inferred} ${c.state} ${c.proto}`.toLowerCase();
+        return str.includes(search);
+      });
+    }
+    return list;
+  }
+
+  function renderConnectionsTable() {
+    const tbody = document.getElementById("connectionsTableBody");
+    if (!tbody) return;
+
+    if (!state.liveMonitorRunning && (!state.connections || state.connections.length === 0)) {
+      tbody.innerHTML = `<tr><td colspan="9" class="host-empty">
+        <div style="display:flex; flex-direction:column; align-items:center; gap:8px; padding:24px 0;">
+          <div style="font-size:1.8rem;">📡</div>
+          <div style="font-weight:600; color:var(--text-primary);">Live Socket Monitor is Inactive</div>
+          <div style="font-size:0.8rem; color:var(--text-muted); max-width:420px; text-align:center;">
+            Click <strong>"Start Live Monitor"</strong> above to capture sub-second TCP/UDP socket activity, active MySQL sessions, and external telemetry with zero SIEM grid pollution.
+          </div>
+        </div>
+      </td></tr>`;
+      return;
+    }
+
+    const list = getFilteredConnections();
+
+    if (list.length === 0) {
+      tbody.innerHTML = `<tr><td colspan="9" class="host-empty">
+        <div style="padding:20px 0;">No active socket connections matching current filters.</div>
+      </td></tr>`;
+      return;
+    }
+
+    tbody.innerHTML = list
+      .map((c) => {
+        const isLocal = !!c.is_localhost;
+        const scopeBadge = isLocal
+          ? `<span class="badge badge-subtle" style="font-size:0.7rem; letter-spacing:0.02em;">Localhost</span>`
+          : `<span class="badge" style="background:rgba(168,85,247,0.15); border:1px solid rgba(168,85,247,0.3); color:#c084fc; font-size:0.7rem; font-weight:600;">Remote</span>`;
+
+        const svcLower = (c.service_inferred || "").toLowerCase();
+        const isDB = svcLower.includes("mysql") ||
+                     svcLower.includes("database") ||
+                     svcLower.includes("postgres") ||
+                     svcLower.includes("redis") ||
+                     [3306, 5432, 1433, 1521, 27017, 6379].includes(c.dst_port) ||
+                     [3306, 5432, 1433, 1521, 27017, 6379].includes(c.src_port);
+
+        let svcBadge = `<span class="conn-badge-generic">🔹 ${escapeHtml(c.service_inferred || "TCP Socket")}</span>`;
+        if (isDB) {
+          svcBadge = `<span class="conn-badge-db">🗄️ ${escapeHtml(c.service_inferred || "Database")}</span>`;
+        } else if (svcLower.includes("http") || svcLower.includes("api") || [80, 443, 8000, 8080, 5000].includes(c.dst_port) || [80, 443, 8000, 8080, 5000].includes(c.src_port)) {
+          svcBadge = `<span class="conn-badge-http">🌐 ${escapeHtml(c.service_inferred || "HTTP / API")}</span>`;
+        }
+
+        const isEst = (c.state === "ESTABLISHED" || c.state === "5");
+        const isListen = (c.state === "LISTEN" || c.state === "LISTENING");
+        const dotClass = isEst ? "green" : (isListen ? "orange" : "gray");
+        const stateHtml = `<span class="conn-state-pill"><span class="conn-state-dot ${dotClass}"></span>${escapeHtml(c.state || "ESTABLISHED")}</span>`;
+
+        const pName = c.process_name || "system";
+        const pPath = c.process_path ? ` title="${escapeHtml(c.process_path)}"` : "";
+        const isTCP = (c.proto || "tcp").toLowerCase() === "tcp";
+        const protoBadge = `<span class="badge" style="background:${isTCP ? 'rgba(56,189,248,0.12)' : 'rgba(192,132,252,0.12)'}; color:${isTCP ? '#38bdf8' : '#c084fc'}; border:1px solid ${isTCP ? 'rgba(56,189,248,0.25)' : 'rgba(192,132,252,0.25)'}; font-size:0.72rem; font-weight:700;">${(c.proto || "TCP").toUpperCase()}</span>`;
+
+        const srcEndpoint = `${c.src_ip}:${c.src_port}`;
+        const dstEndpoint = `${c.dst_ip}:${c.dst_port}`;
+        const fiveTuple = `${srcEndpoint} -> ${dstEndpoint} (${c.proto || 'tcp'})`;
+
+        return `
+          <tr>
+            <td>
+              <div class="conn-process-badge"${pPath}>
+                <span style="font-weight:600; color:var(--text-primary); font-size:0.84rem;">${escapeHtml(pName)}</span>
+                <span class="conn-pid-tag">${c.pid}</span>
+              </div>
+            </td>
+            <td>${protoBadge}</td>
+            <td>
+              <div class="conn-endpoint-pill btn-copy-src" data-val="${escapeHtml(srcEndpoint)}" title="Click to copy source endpoint">
+                <span>${escapeHtml(srcEndpoint)}</span>
+                <svg class="conn-copy-icon" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
+              </div>
+            </td>
+            <td style="color:var(--text-muted); text-align:center; font-size:0.85rem;">➔</td>
+            <td>
+              <div class="conn-endpoint-pill btn-copy-dst" data-val="${escapeHtml(dstEndpoint)}" title="Click to copy destination endpoint">
+                <span style="font-weight:600;">${escapeHtml(dstEndpoint)}</span>
+                <svg class="conn-copy-icon" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
+              </div>
+            </td>
+            <td>${svcBadge}</td>
+            <td>${stateHtml}</td>
+            <td>${scopeBadge}</td>
+            <td style="text-align:center;">
+              <button class="btn-action-copy btn-copy-5tuple" data-tuple="${escapeHtml(fiveTuple)}" title="Copy 5-tuple (${escapeHtml(fiveTuple)})">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
+              </button>
+            </td>
+          </tr>
+        `;
+      })
+      .join("");
+
+    // Attach copy listeners
+    tbody.querySelectorAll(".btn-copy-src, .btn-copy-dst").forEach((pill) => {
+      pill.addEventListener("click", () => {
+        const val = pill.getAttribute("data-val");
+        copyToClipboard(val, `endpoint "${val}"`);
+      });
+    });
+
+    tbody.querySelectorAll(".btn-copy-5tuple").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const tuple = btn.getAttribute("data-tuple");
+        copyToClipboard(tuple, `connection 5-tuple`);
+      });
+    });
+  }
+
+  function setupConnectionsPanel() {
+    const toggleBtn = document.getElementById("btnToggleLiveMonitor");
+    const refreshBtn = document.getElementById("btnRefreshConnections");
+    const copyListBtn = document.getElementById("btnCopyAllConns");
+    const chips = document.getElementById("connFilterChips");
+    const searchInp = document.getElementById("connSearchInput");
+
+    state.connFilters = state.connFilters || { filter: "clean", search: "" };
+
+    if (toggleBtn) {
+      toggleBtn.addEventListener("click", async () => {
+        const isRunning = state.liveMonitorRunning;
+        const endpoint = isRunning ? "/api/live-monitor/stop" : "/api/live-monitor/start";
+        toggleBtn.disabled = true;
         try {
-          btnToggle.style.opacity = "0.5";
-          await fetch(endpoint, { method: "POST" });
-          await fetchHostData();
-        } catch (err) {
-          console.error("Toggle error:", err);
+          const res = await fetch(endpoint, { method: "POST" });
+          if (res.ok) {
+            const data = await res.json();
+            handleConnectionUpdate(data);
+            showToast(isRunning ? "Stopped Live Monitor" : "Started Live System Monitor", "success");
+          }
+        } catch (e) {
+          console.warn("Toggle live monitor error:", e);
         } finally {
-          btnToggle.style.opacity = "1";
+          toggleBtn.disabled = false;
         }
       });
     }
 
-    if (btnRefresh) {
-      btnRefresh.addEventListener("click", () => fetchHostData());
+    if (refreshBtn) {
+      refreshBtn.addEventListener("click", () => fetchConnections());
     }
 
-    subtabs.forEach((tab) => {
-      tab.addEventListener("click", () => {
-        const target = tab.getAttribute("data-subtab");
-        activeHostSubTab = target;
-        subtabs.forEach((t) => t.classList.remove("active"));
-        tab.classList.add("active");
+    if (copyListBtn) {
+      copyListBtn.addEventListener("click", () => {
+        const list = getFilteredConnections();
+        if (!list || list.length === 0) {
+          showToast("No active connections to copy", "warning");
+          return;
+        }
+        const text = list.map((c) => `${c.proto || 'tcp'}\t${c.src_ip}:${c.src_port}\t->\t${c.dst_ip}:${c.dst_port}\t${c.process_name || 'system'}(PID:${c.pid})\t${c.service_inferred || 'socket'}\t${c.state}`).join("\n");
+        copyToClipboard(text, `${list.length} connections`);
+      });
+    }
 
-        const viewConns = document.getElementById("hostSubViewConnections");
-        const viewEvents = document.getElementById("hostSubViewEvents");
-        const viewProcs = document.getElementById("hostSubViewProcesses");
+    if (chips) {
+      chips.querySelectorAll(".conn-chip").forEach((chip) => {
+        chip.addEventListener("click", () => {
+          chips.querySelectorAll(".conn-chip").forEach((c) => c.classList.remove("active"));
+          chip.classList.add("active");
+          state.connFilters = state.connFilters || {};
+          state.connFilters.filter = chip.getAttribute("data-conn-filter") || "clean";
+          renderConnectionsTable();
+        });
+      });
+    }
 
-        if (viewConns) viewConns.style.display = target === "connections" ? "block" : "none";
-        if (viewEvents) viewEvents.style.display = target === "events" ? "block" : "none";
-        if (viewProcs) viewProcs.style.display = target === "processes" ? "block" : "none";
+    if (searchInp) {
+      searchInp.addEventListener(
+        "input",
+        debounce((e) => {
+          state.connFilters = state.connFilters || {};
+          state.connFilters.search = e.target.value;
+          renderConnectionsTable();
+        }, 120)
+      );
+    }
+  }
+
+  // --------------------------------------------------------------------------
+  // Sources & Declarative Onboarding Engine
+  // --------------------------------------------------------------------------
+  function handleSourceHealthUpdate(data) {
+    if (!data) return;
+    state.sources = data.sources || [];
+    state.sourceMetrics = data.metrics || {};
+    if (state.activeTab === "sources") {
+      renderSourcesTable(state.sources, state.sourceMetrics);
+    }
+  }
+
+  async function fetchSources() {
+    try {
+      const res = await fetch("/api/sources");
+      if (!res.ok) return;
+      const data = await res.json();
+      handleSourceHealthUpdate(data);
+    } catch (err) {
+      console.warn("fetchSources error:", err);
+    }
+  }
+
+  function renderSourcesTable(sources, metrics) {
+    const activeEl = document.getElementById("srcStatActive");
+    const epsEl = document.getElementById("srcStatEPS");
+    const valEl = document.getElementById("srcStatValidity");
+    const dlqEl = document.getElementById("srcStatDLQ");
+    const tbody = document.getElementById("sourcesTableBody");
+
+    if (activeEl) activeEl.textContent = `${metrics.active_sources || 0} / ${metrics.total_sources_registered || 0}`;
+    if (epsEl) epsEl.textContent = `${(metrics.total_events || 0).toLocaleString()} events`;
+    if (valEl) valEl.textContent = `${metrics.validity_rate_pct || 100}%`;
+    if (dlqEl) dlqEl.textContent = (metrics.total_dead_letter || 0).toLocaleString();
+
+    if (!tbody) return;
+    if (!sources || sources.length === 0) {
+      tbody.innerHTML = `<tr><td colspan="7" class="host-empty">No log sources registered yet.</td></tr>`;
+      return;
+    }
+
+    tbody.innerHTML = sources
+      .map((s) => {
+        const isEnabled = s.enabled === 1;
+        const statusBadge = isEnabled
+          ? `<span class="badge badge-allow">ACTIVE</span>`
+          : `<span class="badge badge-subtle">DISABLED</span>`;
+        
+        let healthBadge = `<span class="badge badge-allow">● Healthy</span>`;
+        if (s.health_state === "warning" || s.dead_letter_count > 0) {
+          healthBadge = `<span class="badge badge-cat-threat" style="background: rgba(245, 158, 11, 0.15); color: #f59e0b;">● Warning (${s.dead_letter_count} DLQ)</span>`;
+        } else if (s.health_state === "error") {
+          healthBadge = `<span class="badge badge-deny">● Error</span>`;
+        }
+
+        const typeBadge = s.source_type === "declarative"
+          ? `<span class="badge badge-cat-system" style="background: rgba(168, 85, 247, 0.15); color: #a855f7;">No-Code (${escapeHtml(s.input_type || "YAML")})</span>`
+          : `<span class="badge badge-subtle">Built-in (${escapeHtml(s.input_type || "plugin")})</span>`;
+
+        const lastEvent = s.last_event_at ? formatTimestamp(s.last_event_at) : "Never";
+
+        return `
+          <tr>
+            <td>
+              <strong style="color: var(--text-primary); font-size: 0.9rem;">${escapeHtml(s.name || s.source_id)}</strong>
+              <div style="font-size: 0.75rem; color: var(--text-muted);">${escapeHtml(s.vendor || "")} / ${escapeHtml(s.product || "")}</div>
+            </td>
+            <td>${typeBadge}</td>
+            <td>${healthBadge}</td>
+            <td class="mono-text" style="font-weight: 600;">${(s.events_processed || 0).toLocaleString()}</td>
+            <td>${statusBadge}</td>
+            <td class="mono-text" style="font-size: 0.75rem; color: var(--text-muted);">${lastEvent}</td>
+            <td>
+              <div style="display: flex; gap: 6px;">
+                <button class="pagination-btn btn-toggle-src" data-id="${escapeHtml(s.source_id)}" data-enabled="${isEnabled ? '1' : '0'}" style="padding: 2px 8px; font-size: 0.75rem;">
+                  ${isEnabled ? 'Disable' : 'Enable'}
+                </button>
+                ${s.source_type === 'declarative' ? `<button class="pagination-btn btn-del-src" data-id="${escapeHtml(s.source_id)}" style="padding: 2px 8px; font-size: 0.75rem; color: var(--color-danger);">Delete</button>` : ''}
+              </div>
+            </td>
+          </tr>
+        `;
+      })
+      .join("");
+
+    // Attach action listeners
+    tbody.querySelectorAll(".btn-toggle-src").forEach((btn) => {
+      btn.addEventListener("click", async () => {
+        const sId = btn.getAttribute("data-id");
+        const isEn = btn.getAttribute("data-enabled") === "1";
+        const endpoint = isEn ? `/api/sources/${sId}/disable` : `/api/sources/${sId}/enable`;
+        await fetch(endpoint, { method: "POST" });
+        fetchSources();
       });
     });
 
-    const btnBack = document.getElementById("btnBackToEvents");
-    if (btnBack) {
-      btnBack.addEventListener("click", () => {
-        switchTab("events");
+    tbody.querySelectorAll(".btn-del-src").forEach((btn) => {
+      btn.addEventListener("click", async () => {
+        const sId = btn.getAttribute("data-id");
+        if (confirm(`Delete declarative source '${sId}'?`)) {
+          await fetch(`/api/sources/${sId}`, { method: "DELETE" });
+          fetchSources();
+        }
+      });
+    });
+  }
+
+  function setupOnboardingWizard() {
+    const modal = document.getElementById("onboardingModal");
+    const openBtn = document.getElementById("openOnboardingBtn");
+    const closeBtn = document.getElementById("closeOnboardingBtn");
+    const cancelBtn = document.getElementById("cancelOnboardingBtn");
+    const inferBtn = document.getElementById("wizardInferBtn");
+    const testBtn = document.getElementById("wizardTestBtn");
+    const saveBtn = document.getElementById("saveOnboardingBtn");
+
+    const sampleArea = document.getElementById("wizardSampleEvent");
+    const yamlArea = document.getElementById("wizardConfigYaml");
+    const resultsBox = document.getElementById("wizardTestResults");
+    const statusBadge = document.getElementById("wizardStatusBadge");
+    const extractedPre = document.getElementById("wizardExtractedJson");
+    const normalizedPre = document.getElementById("wizardNormalizedJson");
+
+    const sampleKV = 'devtime="2024-03-15T10:22:45Z" hostname=fw-edge-01 srcip=192.168.1.55 dstip=10.0.0.12 srcport=54321 dstport=443 proto=TCP action=deny user=malicious_actor bytes_in=0 bytes_out=64';
+    const sampleCSV = 'SECURE_PROXY_GW,2024-03-15T10:22:45Z,192.168.1.105,198.51.100.20,443,alice,CONNECT,200,1024,4096,allow';
+    const sampleJSON = '{"auth_event_type":"login_failed","account_id":"acc-9921","timestamp":"2024-03-15T10:22:45Z","status":"failure","actor":{"username":"admin","ip":"203.0.113.88"},"policy":{"rule_id":"AUTH_RULE_01"}}';
+
+    if (openBtn && modal) {
+      openBtn.addEventListener("click", () => {
+        if (!sampleArea.value.trim()) sampleArea.value = sampleKV;
+        if (!yamlArea.value.trim()) {
+          yamlArea.value = `name: custom_firewall\nvendor: CustomSec\nproduct: PerimeterGuard\nversion: "1.0.0"\nenabled: true\nlog_format: "custom_fw"\n\nframing:\n  type: line\n\ndetection:\n  contains:\n    - "srcip="\n    - "dstip="\n  contains_mode: all\n\nparser:\n  type: key_value\n  pair_delimiter: " "\n  kv_delimiter: "="\n\nfields:\n  timestamp: devtime\n  types:\n    srcport: port\n    dstport: port\n    bytes_in: int\n    bytes_out: int\n\nnormalize:\n  source.vendor: CustomSec\n  source.product: PerimeterGuard\n  source.device_hostname: hostname\n  event.category: network\n  event.action: action\n  event.outcome: action\n  event.severity_numeric: 5.0\n  network.src_ip: srcip\n  network.dst_ip: dstip\n  network.src_port: srcport\n  network.dst_port: dstport\n  network.protocol: proto\n  identity.username: user\n  retain_unmapped: true`;
+        }
+        modal.classList.add("open");
       });
     }
 
-    // Background poller when liveHost tab is active
-    setInterval(() => {
-      if (state.activeTab === "livehost") {
-        fetchHostData();
-      }
-    }, 1500);
+    if (closeBtn) closeBtn.addEventListener("click", () => modal.classList.remove("open"));
+    if (cancelBtn) cancelBtn.addEventListener("click", () => modal.classList.remove("open"));
+
+    document.getElementById("wizardLoadSampleKVBtn")?.addEventListener("click", () => {
+      sampleArea.value = sampleKV;
+      inferBtn?.click();
+    });
+    document.getElementById("wizardLoadSampleCSVBtn")?.addEventListener("click", () => {
+      sampleArea.value = sampleCSV;
+      inferBtn?.click();
+    });
+    document.getElementById("wizardLoadSampleJSONBtn")?.addEventListener("click", () => {
+      sampleArea.value = sampleJSON;
+      inferBtn?.click();
+    });
+
+    if (inferBtn) {
+      inferBtn.addEventListener("click", async () => {
+        const text = sampleArea.value.trim();
+        if (!text) { alert("Please paste a sample log line first."); return; }
+        inferBtn.textContent = "Inferring...";
+        try {
+          const res = await fetch("/api/sources/infer", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ sample_event: text, name_hint: "custom_source" }),
+          });
+          const d = await res.json();
+          if (d.draft_config) {
+            // Format into YAML string or JSON
+            yamlArea.value = JSON.stringify(d.draft_config, null, 2);
+          }
+        } catch (e) {
+          alert("Inference failed: " + e.message);
+        } finally {
+          inferBtn.textContent = "⚡ Auto-Infer Configuration";
+        }
+      });
+    }
+
+    if (testBtn) {
+      testBtn.addEventListener("click", async () => {
+        const sample = sampleArea.value.trim();
+        const cfgText = yamlArea.value.trim();
+        if (!sample || !cfgText) { alert("Sample event and configuration are required."); return; }
+
+        let parsedCfg = null;
+        try {
+          parsedCfg = JSON.parse(cfgText);
+        } catch (e) {
+          // If pure YAML, send as config dict or parse basic keys
+          alert("Please verify configuration is formatted properly (valid JSON/YAML).");
+          return;
+        }
+
+        testBtn.textContent = "Testing...";
+        try {
+          const res = await fetch("/api/sources/test", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ config: parsedCfg, sample_event: sample, tenant_id: "demo_tenant" }),
+          });
+          const result = await res.json();
+          resultsBox.style.display = "block";
+          if (result.valid) {
+            statusBadge.innerHTML = `<span class="badge badge-allow" style="font-size: 0.85rem; padding: 4px 10px;">✔ VALIDATION PASSED — Matched Format: ${escapeHtml(result.detected_format)} (Hash: ${result.raw_hash.substring(0, 12)}...)</span>`;
+          } else {
+            statusBadge.innerHTML = `<span class="badge badge-deny" style="font-size: 0.85rem; padding: 4px 10px;">✖ VALIDATION FAILED: ${(result.errors || []).join("; ")}</span>`;
+          }
+          extractedPre.textContent = JSON.stringify(result.extracted_fields, null, 2);
+          normalizedPre.textContent = JSON.stringify(result.normalized_event, null, 2);
+        } catch (e) {
+          alert("Test failed: " + e.message);
+        } finally {
+          testBtn.textContent = "▶ Test Mapping Against Sample";
+        }
+      });
+    }
+
+    if (saveBtn) {
+      saveBtn.addEventListener("click", async () => {
+        const cfgText = yamlArea.value.trim();
+        let parsedCfg = null;
+        try {
+          parsedCfg = JSON.parse(cfgText);
+        } catch (e) {
+          alert("Please ensure configuration is valid JSON/YAML.");
+          return;
+        }
+
+        try {
+          saveBtn.textContent = "Saving...";
+          const res = await fetch("/api/sources", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ config: parsedCfg }),
+          });
+          const d = await res.json();
+          if (res.ok) {
+            alert(`Log Source '${parsedCfg.name}' successfully activated!`);
+            modal.classList.remove("open");
+            fetchSources();
+          } else {
+            alert(`Failed to save source: ${JSON.stringify(d.detail)}`);
+          }
+        } catch (e) {
+          alert("Save error: " + e.message);
+        } finally {
+          saveBtn.textContent = "✔ Save & Activate Source";
+        }
+      });
+    }
   }
 
   // --------------------------------------------------------------------------
@@ -1308,7 +1836,9 @@
 
     setupKeyboardShortcuts();
     setupSSE();
-    setupLiveHostPanel();
+    setupConnectionsPanel();
+    setupCrosswalkTabs();
+    setupOnboardingWizard();
     setupDensityToolbar();
     window.addEventListener("resize", debounce(() => virtualScroller.render(), 100));
 
@@ -1331,27 +1861,39 @@
       if (step && msg) step.textContent = msg;
     }
 
-    setProgress(15, "Connecting to SQLite index cache...");
-    await new Promise((r) => setTimeout(r, 100));
+    function dismissScreen() {
+      if (screen && !screen.classList.contains("hidden")) {
+        screen.classList.add("hidden");
+        setTimeout(() => { screen.style.display = "none"; }, 400);
+      }
+    }
 
-    setProgress(40, "Fetching Universal Event Schema metrics...");
-    await fetchStats();
-    await new Promise((r) => setTimeout(r, 120));
+    // Safety timeout: ensure screen is ALWAYS dismissed even if network requests stall
+    const safetyTimer = setTimeout(dismissScreen, 2500);
 
-    setProgress(75, "Syncing perimeter normalized event store...");
-    await fetchEvents(1);
-    await new Promise((r) => setTimeout(r, 120));
+    try {
+      setProgress(15, "Connecting to SQLite index cache...");
+      await new Promise((r) => setTimeout(r, 80));
 
-    setProgress(92, "Verifying parser plugin health...");
-    await fetchParsersHealth();
-    await new Promise((r) => setTimeout(r, 80));
+      setProgress(40, "Fetching Universal Event Schema metrics...");
+      try { await fetchStats(); } catch (e) { console.warn(e); }
+      await new Promise((r) => setTimeout(r, 80));
 
-    setProgress(100, "Pipeline ready!");
-    await new Promise((r) => setTimeout(r, 160));
+      setProgress(75, "Syncing perimeter normalized event store...");
+      try { await fetchEvents(1); } catch (e) { console.warn(e); }
+      await new Promise((r) => setTimeout(r, 80));
 
-    if (screen) {
-      screen.classList.add("hidden");
-      setTimeout(() => { screen.style.display = "none"; }, 400);
+      setProgress(92, "Verifying parser plugin health...");
+      try { await fetchParsersHealth(); } catch (e) { console.warn(e); }
+      await new Promise((r) => setTimeout(r, 60));
+
+      setProgress(100, "Pipeline ready!");
+      await new Promise((r) => setTimeout(r, 100));
+    } catch (e) {
+      console.warn("Loading error:", e);
+    } finally {
+      clearTimeout(safetyTimer);
+      dismissScreen();
     }
   }
 

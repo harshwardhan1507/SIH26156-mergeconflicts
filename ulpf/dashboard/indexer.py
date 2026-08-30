@@ -25,6 +25,7 @@ logger = logging.getLogger(__name__)
 CREATE_TABLES_SQL = """
 CREATE TABLE IF NOT EXISTS events_index (
     event_id TEXT PRIMARY KEY,
+    tenant_id TEXT NOT NULL DEFAULT 'default',
     ingest_timestamp TEXT NOT NULL,
     source_event_timestamp TEXT,
     vendor TEXT,
@@ -51,6 +52,7 @@ CREATE TABLE IF NOT EXISTS events_index (
 );
 
 CREATE INDEX IF NOT EXISTS idx_events_ts ON events_index(ingest_timestamp DESC);
+CREATE INDEX IF NOT EXISTS idx_events_tenant ON events_index(tenant_id);
 CREATE INDEX IF NOT EXISTS idx_events_vendor ON events_index(vendor);
 CREATE INDEX IF NOT EXISTS idx_events_category ON events_index(category);
 CREATE INDEX IF NOT EXISTS idx_events_severity ON events_index(severity_numeric);
@@ -95,6 +97,15 @@ class EventIndexer:
         conn = self._get_connection()
         try:
             with conn:
+                # Check if table exists
+                cur = conn.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='events_index'")
+                table_exists = cur.fetchone() is not None
+                if table_exists:
+                    # Check if tenant_id column exists
+                    info = conn.execute("PRAGMA table_info(events_index)").fetchall()
+                    col_names = [r[1] if isinstance(r, (tuple, list)) else r["name"] for r in info]
+                    if "tenant_id" not in col_names:
+                        conn.execute("ALTER TABLE events_index ADD COLUMN tenant_id TEXT NOT NULL DEFAULT 'default'")
                 conn.executescript(CREATE_TABLES_SQL)
         finally:
             if self.db_path != ":memory:":
@@ -149,14 +160,14 @@ class EventIndexer:
             if new_records:
                 insert_sql = """
                 INSERT OR REPLACE INTO events_index (
-                    event_id, ingest_timestamp, source_event_timestamp,
+                    event_id, tenant_id, ingest_timestamp, source_event_timestamp,
                     vendor, product, device_hostname, category, action,
                     outcome, severity_numeric, severity_original, src_ip,
                     src_port, dst_ip, dst_port, protocol, bytes_in,
                     bytes_out, username, rule_name, parser_name, raw_format,
                     raw_hash, full_event_json
                 ) VALUES (
-                    ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+                    ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
                 )
                 """
                 with conn:
@@ -192,6 +203,7 @@ class EventIndexer:
         if not event_id:
             return None
 
+        tenant_id = event.get("tenant_id") or "default"
         raw = event.get("raw") or {}
         source = event.get("source") or {}
         ev = event.get("event") or {}
@@ -202,6 +214,7 @@ class EventIndexer:
 
         return (
             event_id,
+            tenant_id,
             event.get("ingest_timestamp") or datetime.now(tz=timezone.utc).isoformat(),
             event.get("source_event_timestamp"),
             source.get("vendor"),
@@ -239,6 +252,7 @@ class EventIndexer:
         outcome: str | None = None,
         action: str | None = None,
         parser_name: str | None = None,
+        tenant_id: str | None = None,
         start_time: str | None = None,
         end_time: str | None = None,
         sort_by: str = "ingest_timestamp",
@@ -266,6 +280,10 @@ class EventIndexer:
 
         where_clauses: list[str] = []
         params: list[Any] = []
+
+        if tenant_id:
+            where_clauses.append("tenant_id = ?")
+            params.append(tenant_id)
 
         if search:
             search_pattern = f"%{search.strip()}%"
@@ -379,43 +397,56 @@ class EventIndexer:
             if self.db_path != ":memory:":
                 conn.close()
 
-    def get_stats(self) -> dict[str, Any]:
+    def get_stats(self, tenant_id: str | None = None) -> dict[str, Any]:
         """Compute aggregated statistics for summary metrics and visual charts."""
         self.sync_from_ndjson()
         conn = self._get_connection()
         try:
             cur = conn.cursor()
+            t_filter = " WHERE tenant_id = ?" if tenant_id else ""
+            t_params = [tenant_id] if tenant_id else []
 
             # Total events
-            cur.execute("SELECT COUNT(*) FROM events_index")
+            cur.execute(f"SELECT COUNT(*) FROM events_index{t_filter}", t_params)
             total_events = cur.fetchone()[0]
 
             # Dead letter count
             dead_letter_count = 0
             if self.dead_letter_path.exists():
                 with open(self.dead_letter_path, "r", encoding="utf-8", errors="replace") as fh:
-                    dead_letter_count = sum(1 for line in fh if line.strip())
+                    for line in fh:
+                        if line.strip():
+                            if tenant_id:
+                                try:
+                                    rec = json.loads(line.strip())
+                                    if rec.get("tenant_id") == tenant_id:
+                                        dead_letter_count += 1
+                                except Exception:
+                                    pass
+                            else:
+                                dead_letter_count += 1
 
             # Category breakdown
-            cur.execute("SELECT category, COUNT(*) as count FROM events_index GROUP BY category ORDER BY count DESC")
+            cur.execute(f"SELECT category, COUNT(*) as count FROM events_index{t_filter} GROUP BY category ORDER BY count DESC", t_params)
             by_category = {row["category"]: row["count"] for row in cur.fetchall()}
 
             # Vendor breakdown & Top 3 vendors
             cur.execute(
-                "SELECT COALESCE(vendor, 'Unknown') as vendor, COUNT(*) as count FROM events_index GROUP BY vendor ORDER BY count DESC"
+                f"SELECT COALESCE(vendor, 'Unknown') as vendor, COUNT(*) as count FROM events_index{t_filter} GROUP BY vendor ORDER BY count DESC",
+                t_params
             )
             vendor_rows = cur.fetchall()
             by_vendor = {row["vendor"]: row["count"] for row in vendor_rows}
             top_vendors = [{"vendor": row["vendor"], "count": row["count"]} for row in vendor_rows[:3]]
 
             # Severity distribution
-            cur.execute("""
+            cur.execute(f"""
                 SELECT
                     SUM(CASE WHEN severity_numeric < 4.0 THEN 1 ELSE 0 END) as low,
                     SUM(CASE WHEN severity_numeric >= 4.0 AND severity_numeric < 7.0 THEN 1 ELSE 0 END) as medium,
                     SUM(CASE WHEN severity_numeric >= 7.0 THEN 1 ELSE 0 END) as high
-                FROM events_index
-            """)
+                FROM events_index{t_filter}
+            """, t_params)
             sev_row = cur.fetchone()
             severity_dist = {
                 "low": sev_row["low"] or 0,
@@ -529,6 +560,7 @@ class EventIndexer:
         vendor: str | None = None,
         category: str | None = None,
         outcome: str | None = None,
+        tenant_id: str | None = None,
     ) -> Iterator[str]:
         """Stream export records in JSON Lines or CSV."""
         res = self.query_events(
@@ -538,6 +570,7 @@ class EventIndexer:
             vendor=vendor,
             category=category,
             outcome=outcome,
+            tenant_id=tenant_id,
         )
         events = res["events"]
 

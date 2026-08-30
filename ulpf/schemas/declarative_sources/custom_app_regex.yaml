@@ -1,0 +1,34 @@
+name: custom_app_regex
+vendor: InternalApp
+product: CoreBanking
+version: "1.0.0"
+enabled: true
+description: "Declarative Regex banking core transaction log source"
+log_format: "banking_regex"
+
+framing:
+  type: line
+
+detection:
+  regex: '^\[BANK-TX\]'
+
+parser:
+  type: regex
+  pattern: '^\[BANK-TX\]\s+\[(?P<timestamp>[^\]]+)\]\s+USER=(?P<username>\S+)\s+IP=(?P<client_ip>[0-9.]+)\s+ACTION=(?P<action>\S+)\s+STATUS=(?P<status>\S+)\s+AMOUNT=(?P<amount>[0-9.]+)\s+MSG="(?P<message>[^"]*)"'
+
+fields:
+  timestamp: "timestamp"
+  types:
+    amount: "float"
+
+normalize:
+  source.vendor: InternalApp
+  source.product: CoreBanking
+  source.device_hostname: "banking-prod-node"
+  event.category: policy
+  event.action: "action"
+  event.outcome: "status"
+  event.severity_numeric: 4.0
+  network.src_ip: "client_ip"
+  identity.username: "username"
+  retain_unmapped: true

@@ -68,12 +68,19 @@ class Validator:
         else:
             self._invalid_count += 1
             dl_record = {
+                'schema_version': event.get('schema_version', '1.2.0'),
+                'tenant_id': event.get('tenant_id', 'default'),
                 'event_id': event.get('event_id', 'unknown'),
                 'raw_payload': event.get('raw', {}).get('raw_payload', ''),
-                'errors': errors,
+                'raw_hash': event.get('raw', {}).get('raw_hash', ''),
+                'raw_format': event.get('raw', {}).get('raw_format', 'unknown'),
+                'stage': 'validation',
+                'error_type': 'SchemaValidationError',
+                'error_message': '; '.join(errors) if errors else 'Failed schema validation',
+                'validation_errors': errors,
                 'timestamp': datetime.now(tz=timezone.utc).isoformat(),
             }
-            self._dl_fh.write(json.dumps(dl_record) + '\n')
+            self._dl_fh.write(json.dumps(dl_record, default=str) + '\n')
             logger.warning('Event %s failed validation: %s', event.get('event_id'), errors)
             return False
 
