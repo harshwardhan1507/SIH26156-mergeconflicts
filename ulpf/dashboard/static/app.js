@@ -1830,9 +1830,20 @@
       });
     }
 
-    // Exports
-    if (el.exportCsvBtn) el.exportCsvBtn.addEventListener("click", () => window.open("/api/export?format=csv", "_blank"));
-    if (el.exportJsonBtn) el.exportJsonBtn.addEventListener("click", () => window.open("/api/export?format=json", "_blank"));
+    // Exports (passes active filters)
+    function buildExportUrl(format) {
+      const p = new URLSearchParams({ format });
+      if (state.filters.search) p.append("search", state.filters.search);
+      if (state.filters.vendor) p.append("vendor", state.filters.vendor);
+      if (state.filters.category) p.append("category", state.filters.category);
+      if (state.filters.action) p.append("action", state.filters.action);
+      if (state.filters.outcome) p.append("outcome", state.filters.outcome);
+      if (state.filters.parserName) p.append("parser_name", state.filters.parserName);
+      return `/api/export?${p.toString()}`;
+    }
+    if (el.exportCsvBtn) el.exportCsvBtn.addEventListener("click", () => window.open(buildExportUrl("csv"), "_blank"));
+    if (el.exportJsonBtn) el.exportJsonBtn.addEventListener("click", () => window.open(buildExportUrl("json"), "_blank"));
+
 
     setupKeyboardShortcuts();
     setupSSE();

@@ -553,6 +553,99 @@ class EventIndexer:
             "records": sliced,
         }
 
+    def _format_table_aligned_event(self, e: dict[str, Any]) -> dict[str, Any]:
+        """Format an event into a clear, nested structure aligned with the table view."""
+        net = e.get("network") or {}
+        src = e.get("source") or {}
+        ev = e.get("event") or {}
+        lineage = e.get("lineage") or {}
+        ident = e.get("identity") or {}
+        rule = e.get("rule") or {}
+        raw = e.get("raw") or {}
+        enrich = e.get("enrichment") or {}
+        vendor_attrs = e.get("vendor_attributes") or {}
+
+        # Build formatted connection flow string e.g. "10.0.0.1:443 -> 1.1.1.1:80 [TCP]"
+        src_str = f"{net.get('src_ip')}:{net.get('src_port')}" if net.get("src_port") else (net.get("src_ip") or "-")
+        dst_str = f"{net.get('dst_ip')}:{net.get('dst_port')}" if net.get("dst_port") else (net.get("dst_ip") or "-")
+        proto_str = f" [{str(net.get('protocol')).upper()}]" if net.get("protocol") else ""
+        flow_path = f"{src_str} -> {dst_str}{proto_str}" if (net.get("src_ip") or net.get("dst_ip")) else "-"
+
+        sev_num = ev.get("severity_numeric")
+        if sev_num is not None:
+            sev_level = "High" if float(sev_num) >= 7.0 else ("Medium" if float(sev_num) >= 4.0 else "Low")
+        else:
+            sev_level = "Unknown"
+
+        return {
+            "event_id": e.get("event_id"),
+            "tenant_id": e.get("tenant_id", "default"),
+            "timestamp": {
+                "ingest_timestamp": e.get("ingest_timestamp"),
+                "source_event_timestamp": e.get("source_event_timestamp"),
+            },
+            "source": {
+                "vendor": src.get("vendor"),
+                "product": src.get("product"),
+                "device_hostname": src.get("device_hostname"),
+                "source_ip": src.get("source_ip"),
+                "log_format": src.get("log_format"),
+            },
+            "event": {
+                "category": ev.get("category"),
+                "action": ev.get("action"),
+                "outcome": ev.get("outcome"),
+                "severity": {
+                    "numeric": sev_num,
+                    "level": sev_level,
+                    "original": ev.get("severity_original"),
+                    "inferred": ev.get("severity_inferred"),
+                },
+                "event_type_vendor_specific": ev.get("event_type_vendor_specific"),
+                "ocsf_class": ev.get("class_name"),
+                "ocsf_class_uid": ev.get("class_uid"),
+                "ocsf_activity": ev.get("activity_name"),
+                "ocsf_activity_id": ev.get("activity_id"),
+            },
+            "connection": {
+                "flow_path": flow_path,
+                "src": {
+                    "ip": net.get("src_ip"),
+                    "port": net.get("src_port"),
+                },
+                "dst": {
+                    "ip": net.get("dst_ip"),
+                    "port": net.get("dst_port"),
+                },
+                "protocol": net.get("protocol"),
+                "direction": net.get("direction"),
+                "bytes_in": net.get("bytes_in"),
+                "bytes_out": net.get("bytes_out"),
+                "interface": net.get("interface"),
+            },
+            "identity": {
+                "username": ident.get("username"),
+                "user_domain": ident.get("user_domain"),
+            } if any(ident.values()) else None,
+            "rule": {
+                "rule_id": rule.get("rule_id"),
+                "rule_name": rule.get("rule_name"),
+                "policy_action": rule.get("policy_action"),
+            } if any(rule.values()) else None,
+            "parser": {
+                "name": lineage.get("parser_name"),
+                "version": lineage.get("parser_version"),
+                "ruleset_version": lineage.get("normalization_ruleset_version"),
+            },
+            "forensics": {
+                "raw_format": raw.get("raw_format"),
+                "raw_hash": raw.get("raw_hash"),
+                "raw_payload": raw.get("raw_payload"),
+            },
+            "vendor_attributes": vendor_attrs if vendor_attrs else None,
+            "enrichment": enrich if enrich else None,
+        }
+
     def export_events(
         self,
         export_format: str = "json",
@@ -560,9 +653,11 @@ class EventIndexer:
         vendor: str | None = None,
         category: str | None = None,
         outcome: str | None = None,
+        action: str | None = None,
+        parser_name: str | None = None,
         tenant_id: str | None = None,
     ) -> Iterator[str]:
-        """Stream export records in JSON Lines or CSV."""
+        """Stream export records in nested formatted JSON or CSV."""
         res = self.query_events(
             page=1,
             page_size=10000,
@@ -570,6 +665,8 @@ class EventIndexer:
             vendor=vendor,
             category=category,
             outcome=outcome,
+            action=action,
+            parser_name=parser_name,
             tenant_id=tenant_id,
         )
         events = res["events"]
@@ -622,5 +719,7 @@ class EventIndexer:
                 output.seek(0)
                 output.truncate(0)
         else:
-            for e in events:
-                yield json.dumps(e) + "\n"
+            # Table-aligned nested JSON structure, formatted with indentation
+            formatted_list = [self._format_table_aligned_event(e) for e in events]
+            yield json.dumps(formatted_list, indent=2)
+

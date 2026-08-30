@@ -192,8 +192,14 @@ def test_api_endpoints(sample_output_dir):
     # Test GET /api/export (JSON)
     res = client.get("/api/export?format=json")
     assert res.status_code == 200
-    lines = res.text.strip().split("\n")
-    assert len(lines) == 2
+    export_items = res.json()
+    assert isinstance(export_items, list)
+    assert len(export_items) == 2
+    assert "timestamp" in export_items[0]
+    assert "source" in export_items[0]
+    assert "connection" in export_items[0]
+    assert "event" in export_items[0]
+
 
     # Test POST /api/reindex
     res = client.post("/api/reindex")

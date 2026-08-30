@@ -427,10 +427,17 @@ def main():
                "event_id" in str(csv_data) or "vendor" in str(csv_data))
 
         # JSON Export
-        json_data = _get("/api/export", {"format": "json", "page_size": "5"})
-        valid_lines = [l for l in str(json_data).strip().splitlines() if l.strip()]
-        record("export", f"GET /api/export?format=json streams NDJSON records ({len(valid_lines)} lines)",
-               len(valid_lines) >= 1)
+        json_data = _get("/api/export", {"format": "json"})
+        if isinstance(json_data, list):
+            valid_items = json_data
+        else:
+            try:
+                valid_items = json.loads(str(json_data))
+            except Exception:
+                valid_items = [l for l in str(json_data).strip().splitlines() if l.strip()]
+        record("export", f"GET /api/export?format=json returns formatted nested JSON ({len(valid_items)} events)",
+               isinstance(valid_items, list) and len(valid_items) >= 1 and "timestamp" in valid_items[0] and "connection" in valid_items[0])
+
     except Exception as e:
         record("export", "Streaming & export check", False, str(e))
 

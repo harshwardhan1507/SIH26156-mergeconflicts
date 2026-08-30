@@ -363,8 +363,11 @@ def create_app(
         vendor: str | None = None,
         category: str | None = None,
         outcome: str | None = None,
+        action: str | None = None,
+        parser_name: str | None = None,
+        tenant_id: str | None = None,
     ):
-        """Stream export of filtered events as CSV or NDJSON."""
+        """Stream export of filtered events as CSV or formatted nested JSON."""
         indexer: EventIndexer = STATE["indexer"]
         generator = indexer.export_events(
             export_format=format,
@@ -372,11 +375,15 @@ def create_app(
             vendor=vendor,
             category=category,
             outcome=outcome,
+            action=action,
+            parser_name=parser_name,
+            tenant_id=tenant_id,
         )
-        media_type = "text/csv" if format == "csv" else "application/x-ndjson"
+        media_type = "text/csv" if format == "csv" else "application/json"
         filename = f"ulpf_events_{datetime.now().strftime('%Y%m%d_%H%M%S')}.{format}"
         headers = {"Content-Disposition": f"attachment; filename={filename}"}
         return StreamingResponse(generator, media_type=media_type, headers=headers)
+
 
     @app.post("/api/reindex", dependencies=[Depends(_require_api_key)])
     async def trigger_reindex():
