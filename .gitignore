@@ -43,6 +43,7 @@ coverage.xml
 # IDE and editor data
 .antigravity/
 .system_generated/
+.obsidian/
 
 # Pipeline Run Outputs & Databases
 output/

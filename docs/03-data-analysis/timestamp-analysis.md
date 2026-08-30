@@ -1,0 +1,68 @@
+# Timestamp Parsing & Normalization Analysis
+
+This document inspects timestamp parsing across all 11 parser plugins, evaluating `BaseParser.parse_timestamp()`, epoch conversion, timezone offset handling, leap seconds, sub-millisecond precision, and known edge-case inconsistencies.
+
+---
+
+## 1. Timestamp Parsing Engine (`BaseParser.parse_timestamp`)
+
+Implemented in `ulpf/parsers/base.py:58-97`, the shared timestamp parsing utility executes a two-tier evaluation algorithm:
+
+```mermaid
+flowchart TD
+    TS_INPUT(["Timestamp String (value: str)"]) --> EMPTY_CHECK{"Is None or\nEmpty String?"}
+    EMPTY_CHECK -->|Yes| RET_NONE["Return None"]
+    EMPTY_CHECK -->|No| NUM_CHECK{"re.fullmatch(r'-?\\d+', value)\n(Epoch Integer/Float?)"}
+
+    subgraph TIER1_EPOCH["Tier 1: Unix Epoch Numeric Scaling"]
+        NUM_CHECK -->|Yes: Digits Only| MAGNITUDE{"Evaluate Magnitude\nabs(num)"}
+        MAGNITUDE -->|>= 1e17| RET_NONE
+        MAGNITUDE -->|>= 1e14 (Microseconds)| CONV_MICRO["datetime.fromtimestamp(num / 1_000_000, tz=UTC)"]
+        MAGNITUDE -->|>= 1e11 (Milliseconds)| CONV_MILLI["datetime.fromtimestamp(num / 1_000, tz=UTC)"]
+        MAGNITUDE -->|>= 1e8 (Seconds)| CONV_SEC["datetime.fromtimestamp(num, tz=UTC)"]
+        MAGNITUDE -->|< 1e8| FALLTHROUGH["Fall through to Tier 2"]
+    end
+
+    subgraph TIER2_DATEUTIL["Tier 2: dateutil Calendar Parser"]
+        FALLTHROUGH & NUM_CHECK -->|No: Calendar String| DATEUTIL["dateutil.parser.parse(value)"]
+        TZ_CHECK{"dt.tzinfo is None?\n(Naive Timestamp)"}
+        DATEUTIL --> TZ_CHECK
+        TZ_CHECK -->|Yes: Naive| SET_UTC["dt = dt.replace(tzinfo=timezone.utc)\n(Assume UTC)"]
+        TZ_CHECK -->|No: Aware| NORM_UTC["dt = dt.astimezone(timezone.utc)\n(Convert to UTC)"]
+    end
+
+    CONV_MICRO & CONV_MILLI & CONV_SEC --> RET_DT["Return UTC-Aware datetime Object"]
+    SET_UTC & NORM_UTC --> RET_DT
+```
+
+---
+
+## 2. Cross-Parser Timestamp Treatment Comparison
+
+| Parser Name | Source Timestamp Fields | Accepted Formats | Timezone Behavior | Pre-Processing / Injections | Fallback if Unparseable |
+|---|---|---|---|---|---|
+| **`CEFParser`** | `rt`, `start`, `end`, `deviceReceiptTime`, `deviceCustomDate1/2` | Epoch ms, Epoch sec, `MMM dd yyyy HH:mm:ss`, ISO 8601 | Normalized to UTC via `astimezone(UTC)` | Iterates priority list of timestamp keys | `timestamp_dt = None` |
+| **`LEEFParser`** | `devTime` | Epoch ms, `MMM dd yyyy HH:mm:ss`, ISO 8601 | Converted to UTC | None | `timestamp_dt = None` |
+| **`CiscoASAParser`** | RFC 3164 Syslog timestamp | `MMM dd HH:mm:ss` or ISO 8601 | Naive treated as UTC | **Injects current UTC year** if 4-digit year is missing | `timestamp_dt = None` |
+| **`PaloAltoCSVParser`** | `receive_time` (col 0), `generate_time` (col 5) | `YYYY/MM/DD HH:mm:ss` or ISO 8601 with offset | Converted to UTC | None | `timestamp_dt = None` |
+| **`AWSCloudTrailParser`**| `eventTime` | Strict ISO 8601 (`YYYY-MM-DDTHH:MM:SSZ`) | Explicit UTC (`Z`) | None | `timestamp_dt = None` |
+| **`AzureMonitorParser`** | `time` or `timestamp` | ISO 8601 with fractional seconds (`.0000000Z`) | Explicit UTC | None | `timestamp_dt = None` |
+| **`GCPAuditParser`** | `timestamp` | ISO 8601 with fractional seconds | Explicit UTC | None | `timestamp_dt = None` |
+| **`SyslogRFC3164Parser`**| Header timestamp | `MMM dd HH:mm:ss` or ISO 8601 | Naive treated as UTC | **Injects current UTC year** if 4-digit year is missing | `timestamp_dt = None` |
+| **`SyslogRFC5424Parser`**| Header timestamp | High-precision RFC 5424 (`YYYY-MM-DDTHH:MM:SS.ffffff+00:00`) | Explicit offset converted to UTC | Handles `'-'` as `None` | `timestamp_dt = None` |
+| **`XMLGenericParser`** | `TimeCreated.SystemTime` | ISO 8601 (`YYYY-MM-DDTHH:MM:SS.0000000Z`) | Explicit UTC | None | `timestamp_dt = None` |
+| **`JSONPassthroughParser`**| `ts`, `timestamp`, `time`, `@timestamp`, `event_time`, `datetime` | Epoch, ISO 8601, calendar strings | Converted to UTC | Checks 6 candidate field names | `timestamp_dt = None` |
+
+---
+
+## 3. Discovered Timestamp Inconsistencies & Edge-Case Risks
+
+1. **The BSD Syslog Year-Inference Rollover Risk**:
+   - `SyslogRFC3164Parser` and `CiscoASAParser` prepend `datetime.now(tz=timezone.utc).year` to timestamps like `Aug 15 14:22:10`.
+   - If historical log archives from 2023 or 2024 are ingested, they will be erroneously assigned the current year (e.g. `2026`).
+2. **Naive Timestamp Assumption**:
+   - When a log device outputs a local timestamp without a timezone indicator (e.g. `2026-08-30 14:00:00` generated in `UTC+05:30`), `parse_timestamp()` replaces `tzinfo` with `timezone.utc`. This shifts the true event time by the local timezone offset.
+3. **Leap Second Handling**:
+   - Python's `datetime` library rejects leap seconds (`23:59:60`). `dateutil_parser.parse()` raises `ValueError` on leap second tokens, resulting in `timestamp_dt = None`.
+4. **Source vs. Ingestion Timestamp Separation**:
+   - The UES envelope strictly separates `ingest_timestamp` (guaranteed non-null, generated by pipeline) from `source_event_timestamp` (extracted from payload, nullable). This prevents unparseable source timestamps from corrupting pipeline ordering.
