@@ -1,0 +1,130 @@
+name: Build Cross-Platform Standalone Packages
+
+on:
+  push:
+    tags:
+      - 'v*'
+    branches:
+      - main
+  workflow_dispatch:
+
+jobs:
+  build-standalones:
+    name: Build Standalone for ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            platform: windows
+            artifact_name: windows-binaries
+          - os: ubuntu-latest
+            platform: linux
+            artifact_name: linux-binaries
+          - os: macos-latest
+            platform: macos
+            artifact_name: macos-binaries
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip setuptools wheel
+          python -m pip install -r requirements.txt
+          python -m pip install pyinstaller pillow
+          python -m pip install -e .
+
+      # =====================================================================
+      # WINDOWS BUILD
+      # =====================================================================
+      - name: Build Windows Standalone Executables & MSI
+        if: matrix.platform == 'windows'
+        shell: pwsh
+        run: |
+          python tools/windows/make_icon.py
+          python tools/windows/build_exe.py
+
+      # =====================================================================
+      # LINUX / UBUNTU BUILD
+      # =====================================================================
+      - name: Build Linux (Ubuntu) Standalone Binaries & .deb
+        if: matrix.platform == 'linux'
+        shell: bash
+        run: |
+          mkdir -p dist
+          # 1. Compile standalone Linux executables with PyInstaller
+          pyinstaller tools/windows/ulpf.spec --noconfirm --clean
+          mv dist/ulpf dist/ulpf-linux-x64
+          mv dist/ulpf-dashboard dist/ulpf-dashboard-linux-x64
+          mv dist/ULPF-Launcher dist/ULPF-Launcher-linux-x64
+          
+          # 2. Build Linux portable bundle (.tar.gz)
+          python tools/linux/make_linux_bundle.py
+          
+          # 3. Build Debian / Ubuntu .deb package
+          chmod +x tools/linux/build_deb.sh
+          ./tools/linux/build_deb.sh
+
+      # =====================================================================
+      # MACOS BUILD
+      # =====================================================================
+      - name: Build macOS Standalone Application Bundle (.app & tarball)
+        if: matrix.platform == 'macos'
+        shell: bash
+        run: |
+          mkdir -p dist
+          # 1. Compile standalone macOS executables
+          pyinstaller tools/windows/ulpf.spec --noconfirm --clean
+          mv dist/ulpf dist/ulpf-macos
+          mv dist/ulpf-dashboard dist/ulpf-dashboard-macos
+          mv dist/ULPF-Launcher dist/ULPF-Launcher-macos
+          
+          # 2. Build macOS native .app bundle and distribution tarball
+          python tools/macos/make_macos_bundle.py
+
+      # =====================================================================
+      # UPLOAD ARTIFACTS
+      # =====================================================================
+      - name: Upload Build Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact_name }}
+          path: |
+            dist/*.exe
+            dist/*.msi
+            dist/*.zip
+            dist/*-linux-x64*
+            dist/*.deb
+            dist/*.tar.gz
+            dist/*.app
+            dist/*.whl
+          if-no-files-found: warn
+
+  release:
+    name: Publish Release Assets
+    needs: build-standalones
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download all build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: dist-all
+          merge-multiple: true
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist-all/*
+          draft: false
+          prerelease: false
+          generate_release_notes: true

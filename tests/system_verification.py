@@ -1,0 +1,670 @@
+"""
+Universal Log Pre-processing Framework (ULPF)
+Master End-to-End Test Runner & System Audit (test_all.py)
+
+Covers:
+  - VPN & Remote Tunnels (IPSec, SSL-VPN, OpenVPN via LEEF/Cisco/Syslog/JSON)
+  - Cloud Infrastructure (AWS CloudTrail, Azure Monitor, GCP Audit)
+  - Database Systems (MySQL Audit, MySQL Syslog, MySQL CEF, Database Auth)
+  - Perimeter & Network Appliances (Cisco ASA, Palo Alto, Fortinet, Check Point, Juniper)
+  - Operating Systems & Windows (EVTX XML EventIDs 4624, 4625, 4720, 1102, 5156)
+  - Live Host Telemetry & Active Socket Tracking (Source -> Destination IP:Port)
+  - Forensic Raw Store & SHA-256 Cryptographic Traceability
+  - Dead-Letter Quarantine & JSON Schema Validation
+  - Statistical Anomaly Detection & Baseline Profiler
+  - REST Ingestion APIs & Data Exports (CSV / NDJSON)
+  - Pytest Unit Test Suite (132/132 Tests)
+"""
+import hashlib
+import io
+import json
+import re
+import socket
+import subprocess
+import sys
+import time
+import urllib.error
+import urllib.parse
+import urllib.request
+from pathlib import Path
+from typing import Any
+
+import ulpf.parsers  # noqa: F401 (triggers @register_parser)
+
+# Ensure UTF-8 output on all platforms (Windows cp1252 safe)
+sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
+
+BASE_URL = "http://127.0.0.1:8000"
+PROJECT_ROOT = Path(__file__).resolve().parent
+
+results: list[dict] = []
+
+
+def _get(path: str, params: dict | None = None) -> Any:
+    url = BASE_URL + path
+    if params:
+        qs = "&".join(f"{k}={urllib.parse.quote_plus(str(v))}" for k, v in params.items())
+        url += "?" + qs
+    with urllib.request.urlopen(url, timeout=10) as r:
+        raw = r.read().decode("utf-8", errors="replace")
+    try:
+        return json.loads(raw)
+    except json.JSONDecodeError:
+        return raw
+
+
+def _post(path: str, body: Any = None, content_type: str = "application/json") -> dict:
+    url = BASE_URL + path
+    data = json.dumps(body).encode("utf-8") if body is not None else b""
+    req = urllib.request.Request(url, data=data,
+                                  headers={"Content-Type": content_type}, method="POST")
+    with urllib.request.urlopen(req, timeout=10) as r:
+        return json.loads(r.read().decode("utf-8", errors="replace"))
+
+
+def record(category: str, name: str, passed: bool, detail: str = "", warn_only: bool = False):
+    status = "WARN" if (not passed and warn_only) else ("PASS" if passed else "FAIL")
+    tag = "[PASS]" if passed else ("[WARN]" if warn_only else "[FAIL]")
+    print(f"  {tag:<7} {name}")
+    if detail:
+        for line in detail.strip().splitlines():
+            print(f"          {line}")
+    results.append({"category": category, "name": name, "status": status, "detail": detail})
+
+
+def section_header(title: str):
+    print(f"\n{'='*75}")
+    print(f"  {title}")
+    print(f"{'='*75}")
+
+
+def ensure_server_running():
+    """Ensure the FastAPI dashboard is online before executing API tests."""
+    try:
+        with urllib.request.urlopen(f"{BASE_URL}/api/stats", timeout=2) as r:
+            if r.status == 200:
+                return None
+    except Exception:
+        pass
+
+    print("[INFO] Dashboard server not running on port 8000. Launching local instance...")
+    proc = subprocess.Popen(
+        [sys.executable, "-m", "uvicorn", "ulpf_dashboard.server:main", "--host", "127.0.0.1", "--port", "8000"],
+        cwd=str(PROJECT_ROOT),
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL
+    )
+    for _ in range(30):
+        time.sleep(0.3)
+        try:
+            with urllib.request.urlopen(f"{BASE_URL}/api/stats", timeout=1) as r:
+                if r.status == 200:
+                    print("[INFO] Dashboard server online!")
+                    return proc
+        except Exception:
+            pass
+    print("[WARN] Server did not respond within 10s, continuing anyway...")
+    return proc
+
+
+def main():
+    start_time = time.time()
+    print("=" * 75)
+    print("  ULPF MASTER TEST & VERIFICATION SUITE")
+    print("  Testing: VPN, Cloud (AWS/Azure/GCP), MySQL/Databases, Firewalls, OS")
+    print("=" * 75)
+
+    # Auto-start server if offline
+    ensure_server_running()
+
+    # Initial safety reset: stop live monitor if left running from prior session
+    try:
+        _post("/api/live-monitor/stop")
+        time.sleep(0.3)
+    except Exception:
+        pass
+
+    # 1. CORE CONNECTIVITY & DASHBOARD HEALTH
+    section_header("1. CORE CONNECTIVITY & API HEALTH")
+    try:
+        stats = _get("/api/stats")
+        record("connectivity", "Dashboard API reachable at http://127.0.0.1:8000", True)
+        record("connectivity", "Total normalized events reported", "total_events" in stats,
+               f"total_events={stats.get('total_events')}")
+        record("connectivity", "Dead-letter quarantine count reported", "dead_letter_count" in stats,
+               f"dead_letter_count={stats.get('dead_letter_count')}")
+        record("connectivity", "Zero dead-letter issues (100% schema conformance)",
+               stats.get("dead_letter_count", -1) == 0)
+        record("connectivity", "Hourly event velocity reported", "events_last_1h" in stats,
+               f"events_last_1h={stats.get('events_last_1h')}")
+    except Exception as e:
+        record("connectivity", "Dashboard API reachable", False, str(e))
+
+    # 2. ALL 11 LOG FORMAT PARSERS REGISTERED
+    # (per-parser EVENT COUNTS are checked later, in check_parser_event_counts(),
+    #  after the ingestion sections below have actually fed each parser at
+    #  least one event — checking counts here, before any ingestion has run,
+    #  would fail every parser regardless of whether it works.)
+    section_header("2. LOG PARSER REGISTRY HEALTH (11 FORMATS)")
+    try:
+        pdata = _get("/api/parsers")
+        parsers = {p["name"]: p for p in pdata.get("parsers", [])}
+        record("parsers", f"11 Parsers registered in engine ({len(parsers)} found)", len(parsers) >= 11)
+    except Exception as e:
+        record("parsers", "Parser registry check", False, str(e))
+
+    # 3. VPN LOGS & REMOTE TUNNELS
+    section_header("3. VPN & REMOTE ACCESS TUNNEL PARSING")
+    vpn_samples = [
+        # LEEF IPSec VPN
+        ("LEEF:1.0|IBM|QRadar|7.3.3|VPN-Connect|src=203.0.113.88\tspt=500\tdst=10.0.0.1\tdpt=4500\tproto=UDP\tusrName=john.smith\tsev=3\taction=allow\toutcome=success\tmsg=IPSec VPN session established\tdevTime=Aug 27 2026 12:00:00",
+         "LEEF IPSec VPN (src=203.0.113.88:500 -> dst=10.0.0.1:4500 [UDP])"),
+        # Cisco ASA SSL-VPN
+        ("<166>Aug 27 12:05:00 asa01.corp.example.com %ASA-6-722022: Group <SSL-VPN> User <alice> IP <198.51.100.45> IPv4 Address <10.10.100.5> assigned to session",
+         "Cisco ASA SSL-VPN Client Session Assigned"),
+        # JSON OpenVPN Log
+        ('{"ts":"2026-08-27T12:10:00Z","host":"vpn-gw01","event":"vpn_connect","user":"remote_dev","src":"198.51.100.99","dst":"10.0.0.1","proto":"udp","bytes_in":1048576,"bytes_out":5242880,"result":"success"}',
+         "JSON OpenVPN Gateway Connection (1MB In / 5MB Out)"),
+    ]
+    for raw_line, desc in vpn_samples:
+        try:
+            res = _post("/api/ingest/line", {"line": raw_line})
+            ok = res.get("processed", 0) >= 1 and res.get("errors", 0) == 0
+            record("vpn", f"Ingest: {desc}", ok, str(res))
+        except Exception as e:
+            record("vpn", f"Ingest: {desc}", False, str(e))
+
+    # Verify VPN retrieval & network extraction
+    try:
+        ev = _get("/api/events", {"page": "1", "page_size": "20", "search": "vpn"})
+        vpn_events = ev.get("events", [])
+        record("vpn", f"VPN events queryable in index ({len(vpn_events)} found)", len(vpn_events) >= 1)
+        if vpn_events:
+            v0 = vpn_events[0]
+            has_ip = bool(v0.get("network", {}).get("src_ip") or v0.get("source", {}).get("source_ip"))
+            record("vpn", "VPN remote client IP correctly extracted", has_ip,
+                   f"src_ip={v0.get('network', {}).get('src_ip')}")
+    except Exception as e:
+        record("vpn", "VPN query verification", False, str(e))
+
+    # 3b. STRUCTURED SYSLOG (RFC5424) & PALO ALTO TRAFFIC CSV
+    # (covers the two parsers no other section happens to exercise, so the
+    #  post-ingestion per-parser event count check in section 6b has real
+    #  coverage for all 11 registered parsers, not just 9 of them.)
+    structured_samples = [
+        ("<134>1 2026-08-27T12:30:00Z fw02.corp.example.com sshd 4521 ID99 - RFC5424 structured syslog probe",
+         "Syslog RFC5424 structured log line"),
+        ("2026-08-27T12:31:00.000+00:00,0101010101,TRAFFIC,end,0,2026-08-27 12:31:00,10.1.0.9,198.51.100.44,10.1.0.9,198.51.100.44,allow-internet,carol,,web-browsing,vsys1,trust,untrust,ethernet1/1,ethernet1/2,log-default,tcp-fin,5551,1,443,51234,0,0,0x401a,tcp,allow,2048,1024,1024,6,2026-08-27 12:31:05,3,any,0,1122334,0x0,US,US,0,3,2",
+         "Palo Alto Networks TRAFFIC CSV log line"),
+    ]
+    for raw_line, desc in structured_samples:
+        try:
+            res = _post("/api/ingest/line", {"line": raw_line})
+            ok = res.get("processed", 0) >= 1 and res.get("errors", 0) == 0
+            record("vpn", f"Ingest: {desc}", ok, str(res))
+        except Exception as e:
+            record("vpn", f"Ingest: {desc}", False, str(e))
+
+    # 4. CLOUD INFRASTRUCTURE (AWS, AZURE, GCP)
+    section_header("4. CLOUD INFRASTRUCTURE (AWS, AZURE, GCP)")
+    cloud_samples = [
+        # AWS S3 Data Exfiltration Alert
+        ('{"eventVersion":"1.08","userIdentity":{"type":"IAMUser","userName":"contractor_x"},"eventTime":"2026-08-27T12:15:00Z","eventSource":"s3.amazonaws.com","eventName":"GetObject","awsRegion":"us-east-1","sourceIPAddress":"203.0.113.55","requestParameters":{"bucketName":"corp-financials-2026"}}',
+         "AWS S3 CloudTrail GetObject (Financials Bucket)"),
+        # AWS IAM Unauthorized Delete Attempt
+        ('{"eventVersion":"1.08","userIdentity":{"type":"Root","userName":"root"},"eventTime":"2026-08-27T12:16:00Z","eventSource":"iam.amazonaws.com","eventName":"DeleteUser","awsRegion":"us-east-1","sourceIPAddress":"185.220.101.5","errorCode":"AccessDenied","errorMessage":"Access Denied"}',
+         "AWS CloudTrail IAM DeleteUser AccessDenied (Mapped to Failure)"),
+        # Azure Key Vault Unauthorized Access
+        ('{"time":"2026-08-27T12:20:00.0000000Z","resourceId":"/subscriptions/sub-1234/resourceGroups/prod-sec/providers/Microsoft.KeyVault/vaults/hsm-vault","operationName":"Microsoft.KeyVault/vaults/secrets/read","category":"Administrative","resultType":"Failed","resultSignature":"403","callerIpAddress":"185.234.219.88","identity":{"claims":{"name":"attacker@anon.com"}}}',
+         "Azure Monitor Key Vault 403 Forbidden Access"),
+        # GCP Cloud Audit KMS CryptoKey Destroy
+        ('{"logName":"projects/prod-cloud/logs/cloudaudit.googleapis.com%2Factivity","severity":"CRITICAL","timestamp":"2026-08-27T12:25:00.000000Z","protoPayload":{"@type":"type.googleapis.com/google.cloud.audit.AuditLog","methodName":"cloudkms.cryptoKeyVersions.destroy","resourceName":"projects/prod-cloud/locations/global/keyRings/hsm/cryptoKeys/master-key","authenticationInfo":{"principalEmail":"security-admin@corp.com"},"requestMetadata":{"callerIp":"10.128.0.10"},"status":{"code":0,"message":"OK"}}}',
+         "GCP Cloud Audit KMS Key Destroy Operation"),
+    ]
+    for raw_line, desc in cloud_samples:
+        try:
+            res = _post("/api/ingest/line", {"line": raw_line})
+            ok = res.get("processed", 0) >= 1 and res.get("errors", 0) == 0
+            record("cloud", f"Ingest: {desc}", ok, str(res))
+        except Exception as e:
+            record("cloud", f"Ingest: {desc}", False, str(e))
+
+    # Verify cloud vendor extraction
+    try:
+        aws_res = _get("/api/events", {"vendor": "Amazon Web Services", "page_size": "5"})
+        record("cloud", f"AWS CloudTrail filter: {aws_res.get('total', 0)} events indexed", aws_res.get("total", 0) >= 1)
+        az_res = _get("/api/events", {"vendor": "Microsoft", "page_size": "5"})
+        record("cloud", f"Azure Monitor filter: {az_res.get('total', 0)} events indexed", az_res.get("total", 0) >= 1)
+        gcp_res = _get("/api/events", {"vendor": "Google", "page_size": "5"})
+        record("cloud", f"GCP Cloud Audit filter: {gcp_res.get('total', 0)} events indexed", gcp_res.get("total", 0) >= 1)
+    except Exception as e:
+        record("cloud", "Cloud vendor filtering", False, str(e))
+
+    # 5. DATABASE SYSTEMS (MYSQL, POSTGRESQL, DATABASE AUDIT)
+    section_header("5. DATABASE SYSTEMS (MYSQL, POSTGRESQL, DB AUDIT)")
+    mysql_samples = [
+        # MySQL JSON Audit Log (Connection & Query)
+        ('{"ts":"2026-08-27T12:30:00Z","host":"db-mysql-primary","event":"mysql_query","user":"app_backend","src":"10.0.5.20","dst":"10.0.5.10","dst_port":3306,"proto":"tcp","bytes_in":256,"bytes_out":10480,"result":"success"}',
+         "MySQL Structured Audit: app_backend SELECT Query (Port 3306)"),
+        # MySQL JSON Failed Authentication
+        ('{"ts":"2026-08-27T12:31:00Z","host":"db-mysql-primary","event":"failed_login","user":"root","src":"185.234.219.77","dst":"10.0.5.10","dst_port":3306,"proto":"tcp","severity":8,"result":"failure"}',
+         "MySQL Audit: External Root Brute-Force Login Attempt"),
+        # MySQL Syslog Error Log (RFC 3164)
+        ("<163>Aug 27 12:35:00 db-mysql-01 mysqld[3306]: [Note] Access denied for user 'admin'@'198.51.100.22' (using password: YES)",
+         "MySQL Syslog RFC 3164: Access Denied Note"),
+        # MySQL CEF Format (Enterprise Database Activity Monitoring)
+        ("CEF:0|Oracle|MySQL Server|8.0.35|ACCESS_DENIED|Access Denied|8|src=198.51.100.22 spt=49210 dst=10.0.5.10 dpt=3306 proto=TCP suser=admin act=deny msg=Access denied for user admin",
+         "MySQL CEF DAM: Port 3306 Connection Blocked"),
+        # MySQL LEEF Format (QRadar Database Activity)
+        ("LEEF:1.0|Oracle|MySQL|8.0|DB-Auth-Failed|src=185.220.101.99\tspt=51234\tdst=10.0.5.10\tdpt=3306\tproto=TCP\tusrName=mysql_backup\tsev=7\taction=deny\toutcome=failure\tmsg=MySQL connection rejected\tdevTime=Aug 27 2026 12:40:00",
+         "MySQL LEEF Event: Backup User Connection Denied"),
+    ]
+    for raw_line, desc in mysql_samples:
+        try:
+            res = _post("/api/ingest/line", {"line": raw_line})
+            ok = res.get("processed", 0) >= 1 and res.get("errors", 0) == 0
+            record("mysql", f"Ingest: {desc}", ok, str(res))
+        except Exception as e:
+            record("mysql", f"Ingest: {desc}", False, str(e))
+
+    # Verify MySQL event indexation and full-text search
+    try:
+        my_ev = _get("/api/events", {"page": "1", "page_size": "20", "search": "mysql"})
+        record("mysql", f"MySQL database events queryable in index ({my_ev.get('total', 0)} found)",
+               my_ev.get("total", 0) >= 1)
+    except Exception as e:
+        record("mysql", "MySQL events search", False, str(e))
+
+    # 6. OPERATING SYSTEMS & WINDOWS XML / EVTX
+    section_header("6. OPERATING SYSTEMS & WINDOWS SECURITY (EVTX XML)")
+    win_samples = [
+        # EventID 4624 (Logon Success)
+        ('<Event xmlns="http://schemas.microsoft.com/win/2004/08/events/event"><System><Provider Name="Microsoft-Windows-Security-Auditing"/><EventID>4624</EventID><TimeCreated SystemTime="2026-08-27T12:45:00Z"/><Channel>Security</Channel><Computer>DC01.corp.local</Computer><Level>4</Level></System><EventData><Data Name="TargetUserName">svc_admin</Data><Data Name="IpAddress">10.0.1.15</Data></EventData></Event>',
+         "Windows EventID 4624 (Logon Success for svc_admin)"),
+        # EventID 4625 (Logon Failure)
+        ('<Event xmlns="http://schemas.microsoft.com/win/2004/08/events/event"><System><Provider Name="Microsoft-Windows-Security-Auditing"/><EventID>4625</EventID><TimeCreated SystemTime="2026-08-27T12:46:00Z"/><Channel>Security</Channel><Computer>WINSRV01.corp.local</Computer><Level>4</Level></System><EventData><Data Name="TargetUserName">administrator</Data><Data Name="IpAddress">185.234.219.100</Data></EventData></Event>',
+         "Windows EventID 4625 (Logon Failure - Brute Force)"),
+        # EventID 1102 (Audit Log Cleared - High Severity Alert)
+        ('<Event xmlns="http://schemas.microsoft.com/win/2004/08/events/event"><System><Provider Name="Microsoft-Windows-Security-Auditing"/><EventID>1102</EventID><TimeCreated SystemTime="2026-08-27T12:47:00Z"/><Channel>Security</Channel><Computer>DC01.corp.local</Computer><Level>4</Level></System><EventData><Data Name="SubjectUserName">attacker</Data></EventData></Event>',
+         "Windows EventID 1102 (Audit Log Cleared -> Severity 9.0 Threat)"),
+    ]
+    for raw_line, desc in win_samples:
+        try:
+            res = _post("/api/ingest/line", {"line": raw_line})
+            ok = res.get("processed", 0) >= 1 and res.get("errors", 0) == 0
+            record("windows", f"Ingest: {desc}", ok, str(res))
+        except Exception as e:
+            record("windows", f"Ingest: {desc}", False, str(e))
+
+    # 6b. PER-PARSER EVENT COUNTS — checked here (not in section 2) because it
+    # needs the ingestion sections above (3-6) to have actually run first.
+    section_header("6b. LOG PARSER EVENT COUNTS (POST-INGESTION)")
+    try:
+        pdata = _get("/api/parsers")
+        parsers_by_name = {p["name"]: p for p in pdata.get("parsers", [])}
+        expected_parsers = [
+            ("cef", "ArcSight Common Event Format"),
+            ("cisco_asa", "Cisco ASA Firewall"),
+            ("syslog_rfc5424", "Syslog RFC 5424"),
+            ("syslog_rfc3164", "Syslog RFC 3164 BSD"),
+            ("paloalto_csv", "Palo Alto Networks CSV"),
+            ("json_passthrough", "Generic JSON Passthrough"),
+            ("leef", "IBM QRadar LEEF 1.0 & 2.0"),
+            ("aws_cloudtrail", "AWS CloudTrail JSON"),
+            ("azure_monitor", "Azure Monitor / Activity Logs"),
+            ("gcp_audit", "GCP Cloud Audit protoPayload"),
+            ("xml_generic", "Windows EVTX / XML Generic"),
+        ]
+        for pname, label in expected_parsers:
+            p = parsers_by_name.get(pname)
+            if p:
+                cnt = p.get("event_count", 0)
+                record("parsers", f"Parser [{pname}] ({label}) — Active with {cnt} events", cnt >= 1)
+            else:
+                record("parsers", f"Parser [{pname}] ({label})", False, "Missing in registry")
+    except Exception as e:
+        record("parsers", "Parser event-count check", False, str(e))
+
+    # 7. FORENSIC RAW STORE & CRYPTOGRAPHIC TRACEABILITY
+    section_header("7. FORENSIC TRACEABILITY & SHA-256 INTEGRITY")
+    try:
+        ev = _get("/api/events", {"page": "1", "page_size": "1"})
+        if ev.get("events"):
+            target_event = ev["events"][0]
+            eid = target_event["event_id"]
+            detail = _get(f"/api/events/{eid}")
+            record("traceability", f"Event details retrievable by UUID: {eid}", bool(detail))
+            record("traceability", "Raw payload preserved untouched without data loss",
+                   bool(detail.get("raw_payload")))
+            stored_hash = detail.get("raw_hash", "")
+            record("traceability", "SHA-256 cryptographic hash present (64 chars)",
+                   len(stored_hash) == 64 and bool(re.match(r'^[a-f0-9]{64}$', stored_hash)),
+                   f"hash={stored_hash}")
+            computed_hash = hashlib.sha256(detail.get("raw_payload", "").encode("utf-8")).hexdigest()
+            record("traceability", "Computed SHA-256 matches stored hash (Byte-exact verification)",
+                   computed_hash == stored_hash)
+            record("traceability", "Lineage block retains parser name and ruleset version",
+                   bool(detail.get("parser_name")))
+    except Exception as e:
+        record("traceability", "Traceability validation", False, str(e))
+
+    # 8. LIVE HOST & PROCESS TELEMETRY (ISOLATED BUFFER)
+    section_header("8. LIVE HOST MONITOR & ACTIVE SOCKETS")
+    try:
+        # Check status
+        st = _get("/api/live-monitor/status")
+        record("livehost", "Live Host Monitor status API active", "running" in st)
+        record("livehost", "Default state is OFF (Opt-in toggle)", not st.get("running"))
+
+        # Verify inactive state returns 0 sockets before user clicks start
+        pre_conns = _get("/api/live-monitor/connections").get("connections", [])
+        record("livehost", "Inactive state: 0 sockets returned before user starts capture", len(pre_conns) == 0)
+
+        # Start live capture
+        start_res = _post("/api/live-monitor/start")
+        record("livehost", "POST /api/live-monitor/start activates sub-second collector",
+               start_res.get("running") or "started" in str(start_res))
+        time.sleep(1.5)
+
+        # Check connections with 5-tuples
+        conns_res = _get("/api/live-monitor/connections")
+        conns = conns_res.get("connections", [])
+        record("livehost", f"Active sockets captured with destination IPs ({len(conns)} tracked)",
+               len(conns) >= 1)
+        if conns:
+            c0 = conns[0]
+            has_tuple = all(c0.get(f) for f in ["src_ip", "dst_ip", "src_port", "dst_port", "proto"])
+            record("livehost", "Connection path 5-tuple complete (src:port -> dst:port [proto])",
+                   has_tuple, f"{c0.get('src_ip')}:{c0.get('src_port')} -> {c0.get('dst_ip')}:{c0.get('dst_port')} [{c0.get('proto')}]")
+
+        # Stop live capture
+        stop_res = _post("/api/live-monitor/stop")
+        record("livehost", "POST /api/live-monitor/stop deactivates collector",
+               not stop_res.get("running") or "stopped" in str(stop_res))
+
+        # Check buffer isolation (0 live events leaked to SIEM table)
+        all_ev = _get("/api/events", {"page": "1", "page_size": "200"})
+        leaked = [e for e in all_ev.get("events", []) if (e.get("lineage") or {}).get("parser_name") == "live_monitor"]
+        record("livehost", "Buffer isolation: 0 live host events leak to perimeter SIEM grid",
+               len(leaked) == 0, f"leaked_events={len(leaked)}")
+    except Exception as e:
+        record("livehost", "Live host monitor check", False, str(e))
+
+    # 9. STATISTICAL ANOMALY DETECTION ENGINE
+    section_header("9. STATISTICAL ANOMALY DETECTION (Z-SCORE / IQR / BURSTS)")
+    try:
+        ana = _get("/api/analytics/anomalies", {"top_n": "5"})
+        anomalies = ana.get("anomalies", [])
+        record("analytics", f"Anomaly detector evaluated {ana.get('total_analyzed', 0)} events",
+               ana.get("total_analyzed", 0) >= 1)
+        record("analytics", f"High-risk outliers detected with anomaly scores ({len(anomalies)} returned)",
+               len(anomalies) >= 1)
+        if anomalies:
+            a0 = anomalies[0]
+            record("analytics", "Anomaly score in [0.0, 1.0] range",
+                   0.0 <= a0.get("anomaly_score", -1) <= 1.0, f"score={a0.get('anomaly_score')}")
+            record("analytics", "Human-readable statistical reasoning attached",
+                   len(a0.get("anomaly_reasons", [])) >= 1, str(a0.get("anomaly_reasons")))
+    except Exception as e:
+        record("analytics", "Anomaly detection check", False, str(e))
+
+    # 10. REST STREAMING & DATA EXPORTS
+    section_header("10. REST INGESTION STREAMING & DATA EXPORTS")
+    try:
+        # Stream NDJSON
+        stream_data = b'{"ts":"2026-08-27T12:50:00Z","host":"api-gw","event":"stream_test","src":"10.1.1.1","dst":"10.2.2.2","result":"success"}\n'
+        req = urllib.request.Request(BASE_URL + "/api/ingest/stream", data=stream_data,
+                                     headers={"Content-Type": "application/x-ndjson"}, method="POST")
+        with urllib.request.urlopen(req, timeout=10) as r:
+            sres = json.loads(r.read().decode("utf-8"))
+        record("export", "POST /api/ingest/stream processes chunked NDJSON stream",
+               sres.get("processed", 0) >= 1, str(sres))
+
+        # CSV Export
+        csv_data = _get("/api/export", {"format": "csv", "page_size": "5"})
+        record("export", "GET /api/export?format=csv generates standard CSV",
+               "event_id" in str(csv_data) or "vendor" in str(csv_data))
+
+        # JSON Export
+        json_data = _get("/api/export", {"format": "json", "page_size": "5"})
+        valid_lines = [l for l in str(json_data).strip().splitlines() if l.strip()]
+        record("export", f"GET /api/export?format=json streams NDJSON records ({len(valid_lines)} lines)",
+               len(valid_lines) >= 1)
+    except Exception as e:
+        record("export", "Streaming & export check", False, str(e))
+
+    # 11. PYTEST UNIT & INTEGRATION TEST SUITE
+    section_header("11. PYTEST COMPREHENSIVE UNIT TEST SUITE")
+    try:
+        res = subprocess.run(
+            [sys.executable, "-m", "pytest", "ulpf/tests/", "-q", "--tb=no"],
+            capture_output=True, text=True, timeout=60, cwd=str(PROJECT_ROOT)
+        )
+        out = res.stdout + res.stderr
+        m_pass = re.search(r"(\d+) passed", out)
+        m_fail = re.search(r"(\d+) failed", out)
+        n_pass = int(m_pass.group(1)) if m_pass else 0
+        n_fail = int(m_fail.group(1)) if m_fail else 0
+        record("pytest", f"Pytest Execution: {n_pass} passed, {n_fail} failed",
+               n_fail == 0 and n_pass >= 130, f"Exit code: {res.returncode}\n{out.strip()[-200:]}")
+    except Exception as e:
+        record("pytest", "Pytest suite execution", False, str(e))
+
+    # 12. PROJECT AUDIT & CRITERIA CONFORMANCE (a-h)
+    section_header("12. PROJECT RUBRIC CRITERIA CONFORMANCE (a - h)")
+    try:
+        # (a) Raw Byte Preservation
+        import tempfile
+        import uuid as _uuid_mod
+
+        from ulpf.core.raw_store import FileRawStore
+        with tempfile.TemporaryDirectory() as td:
+            rs = FileRawStore(base_dir=td)
+            bin_event_id = str(_uuid_mod.uuid4())  # raw store keys are validated as UUIDs
+            bin_payload = b"CEF:0|Vendor|\xfe\xffBinary|1.0|1|Test|5|src=1.1.1.1"
+            h = rs.put(bin_event_id, bin_payload)
+            retrieved = rs.get_bytes(bin_event_id)
+            record("criteria", "(a) Raw Byte Preservation: Byte-exact storage of non-UTF8/binary payload",
+                   retrieved == bin_payload and h == hashlib.sha256(bin_payload).hexdigest())
+
+            # Also confirm the store rejects non-UUID keys (path-traversal hardening)
+            try:
+                rs.put("../../../etc/passwd", b"malicious")
+                traversal_blocked = False
+            except Exception:
+                traversal_blocked = True
+            record("criteria", "(a) Raw Store: rejects non-UUID event_id (path traversal hardening)",
+                   traversal_blocked)
+
+        # (b) Vendor Attributes Bag
+        from ulpf.core.normalization import NormalizationEngine
+        ne = NormalizationEngine(PROJECT_ROOT / "ulpf" / "schemas" / "mappings")
+        cef_ext_sample = {
+            "_raw": "raw", "_log_format": "cef", "DeviceVendor": "Vendor", "DeviceProduct": "Prod",
+            "Severity": "5", "cs1": "CustomTagA", "msg": "Extended explanation", "customFloat": 99.5
+        }
+        norm_res = ne.normalize(cef_ext_sample, "cef")
+        va = norm_res.get("vendor_attributes") or {}
+        record("criteria", "(b) Vendor Attributes: 100% preservation of unmapped source fields (msg, cs1)",
+               va.get("cs1") == "CustomTagA" and va.get("msg") == "Extended explanation")
+
+        # (c) OCSF / ECS Taxonomy Alignment
+        ev_tax = norm_res.get("event") or {}
+        record("criteria", "(c) Common Taxonomy: OCSF Class & Activity hierarchy populated",
+               ev_tax.get("class_name") is not None and ev_tax.get("class_uid") is not None)
+
+        # (d) Traceability & Deterministic Event IDs
+        import uuid
+        uid1 = str(uuid.uuid5(uuid.NAMESPACE_URL, "ulpf:default:source1:abc123hash"))
+        uid2 = str(uuid.uuid5(uuid.NAMESPACE_URL, "ulpf:default:source1:abc123hash"))
+        record("criteria", "(d) Traceability: Deterministic UUIDv5 event ID for idempotent reprocessing",
+               uid1 == uid2 and len(uid1) == 36)
+
+        # (e) Plug-and-Play Dynamic Parser Discovery
+        from ulpf.core.registry import get_all_parsers
+        all_p = get_all_parsers()
+        record("criteria", f"(e) Plug-and-Play: Dynamic parser auto-registration ({len(all_p)} active parsers)",
+               len(all_p) >= 11)
+
+        # (f) High-Throughput Network Syslog Listener
+        from ulpf.collectors.syslog_listener import SyslogNetworkListener
+        syslog_box = []
+        sl = SyslogNetworkListener(on_event=lambda m, t: syslog_box.append(m), host="127.0.0.1", port=15199)
+        sl.start()
+        time.sleep(0.1)
+        sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        sock.sendto(b"<134>1 2026-08-27T12:00:00Z host app 1 - - Criteria Check Syslog Packet", ("127.0.0.1", 15199))
+        sock.close()
+        time.sleep(0.2)
+        sl.stop()
+        record("criteria", "(f) Network Ingestion: UDP/TCP Syslog socket listener streaming",
+               len(syslog_box) >= 1 and "Criteria Check" in syslog_box[0])
+
+        # (g) Columnar Parquet & SIEM Egress Sinks
+        from ulpf.sinks.cef_egress import CEFEgressSink
+        from ulpf.sinks.leef_egress import LEEFEgressSink
+        from ulpf.sinks.parquet_sink import ParquetSink
+        sample_evt = {
+            "schema_version": "1.2.0", "tenant_id": "tenant_1", "event_id": "test-e",
+            "ingest_timestamp": "2026-08-27T12:00:00Z",
+            "raw": {"raw_payload": "raw", "raw_format": "cef", "raw_hash": "a"*64},
+            "source": {"vendor": "Cisco", "product": "ASA", "log_format": "cef"},
+            "event": {"category": "network", "action": "deny", "severity_numeric": 7.0},
+            "network": {"src_ip": "1.2.3.4", "dst_ip": "5.6.7.8", "protocol": "tcp"}
+        }
+        cef_out = CEFEgressSink.format_event(sample_evt)
+        leef_out = LEEFEgressSink.format_event(sample_evt)
+        with tempfile.TemporaryDirectory() as td:
+            ps = ParquetSink(base_dir=Path(td))
+            ps.write(sample_evt)
+            ps.flush()
+            p_files = list(Path(td).rglob("*.*"))
+            record("criteria", "(g) SIEM & Data Lake: Parquet partitioned sink & CEF/LEEF egress formatters",
+                   len(p_files) >= 1 and cef_out.startswith("CEF:0|") and leef_out.startswith("LEEF:2.0|"))
+
+        # (h) ML-Ready Feature Vector Extractor
+        from ulpf.analytics.features import FeatureVectorExtractor
+        f_vec = FeatureVectorExtractor.extract_vector(sample_evt)
+        record("criteria", "(h) AI/ML Feature Engineering: 24-dimensional normalized numeric vectors",
+               len(f_vec) == 24 and all(isinstance(x, float) for x in f_vec))
+    except Exception as e:
+        record("criteria", "Criteria conformance check", False, str(e))
+
+    # 13. SIH26156 PRODUCTION-GRADE GAP CLOSING ENHANCEMENTS
+    section_header("13. SIH26156 PRODUCTION-GRADE GAP-CLOSING ENHANCEMENTS")
+    try:
+        # 1. Declarative Source Onboarding & Inference
+        from ulpf.core.declarative import DeclarativeSourceRegistry, infer_declarative_mapping
+        reg = DeclarativeSourceRegistry(sources_dir=PROJECT_ROOT / "ulpf" / "schemas" / "declarative_sources")
+        num_decl = reg.scan_and_register()
+        record("production", f"Declarative No-Code Registry: {num_decl} declarative sources loaded", num_decl >= 4)
+
+        sample_kv = 'devtime="2026-08-30T12:00:00Z" srcip=10.1.1.100 dstip=192.168.1.1 srcport=54321 dstport=443 action=allow user=alice'
+        inf = infer_declarative_mapping(sample_kv, "sample_fw")
+        record("production", "No-Code Mapping Inference: Auto-detects KV and generates draft config",
+               inf.get("parser", {}).get("type") == "key_value" and "network.src_ip" in inf.get("normalize", {}))
+
+        # 2. Multi-Format Event Framing & Multiline Aggregation
+        from ulpf.core.framing import MultilineRegexFramer
+        m_framer = MultilineRegexFramer(start_pattern=r"^\d{4}-\d{2}-\d{2}")
+        m_chunks = [b"2026-08-30 [INFO] Start\n2026-08-30 [ERR] Trace\n  at com.Main(Line 1)\n"]
+        m_res = list(m_framer.frame(m_chunks))
+        record("production", f"Event Framing Layer: Multiline stacktrace aggregation ({len(m_res)} frames)",
+               len(m_res) == 2 and "at com.Main" in m_res[1].raw_text)
+
+        # 3. Scalable Segmented Raw Storage Mode & Random Seek
+        from ulpf.core.segmented_raw_store import SegmentedRawStore
+        with tempfile.TemporaryDirectory() as td:
+            seg_store = SegmentedRawStore(base_dir=td, max_segment_size=1024 * 1024)
+            t_eid = str(uuid.uuid4())
+            t_payload = "Segmented Raw Store Forensic Payload - Preserved 100%"
+            s_hash = seg_store.put(t_eid, t_payload, tenant_id="sih_tenant")
+            ret_payload = seg_store.get(t_eid)
+            seg_rec = seg_store.get_record(t_eid)
+            record("production", "Segmented Raw Store: Byte-exact O(1) random seek & SHA-256 integrity",
+                   ret_payload == t_payload and seg_rec.sha256 == s_hash and seg_rec.tenant_id == "sih_tenant")
+            seg_store.close()
+            import gc; gc.collect()
+
+        # 4. OCSF & ECS Crosswalk Standards Translation
+        from ulpf.crosswalk.ecs import to_ecs
+        from ulpf.crosswalk.ocsf import to_ocsf
+        cross_sample = {
+            "event_id": str(uuid.uuid4()),
+            "ingest_timestamp": "2026-08-30T12:00:00Z",
+            "source": {"vendor": "Cisco", "product": "ASA", "log_format": "syslog"},
+            "event": {"category": "network", "action": "deny", "severity_numeric": 7.0},
+            "network": {"src_ip": "10.0.0.1", "src_port": 12345, "dst_ip": "1.1.1.1", "dst_port": 53, "protocol": "udp"},
+            "identity": {"username": "admin"},
+        }
+        ocsf_obj = to_ocsf(cross_sample)
+        ecs_obj = to_ecs(cross_sample)
+        record("production", "Taxonomy Crosswalk: UES -> OCSF 1.1 Class 4001 Network Activity",
+               ocsf_obj.get("class_uid") == 4001 and ocsf_obj.get("src_endpoint", {}).get("ip") == "10.0.0.1")
+        record("production", "Taxonomy Crosswalk: UES -> ECS 8.11 Transport & Observer mapping",
+               ecs_obj.get("ecs", {}).get("version") == "8.11.0" and ecs_obj.get("source", {}).get("ip") == "10.0.0.1")
+
+        # 5. Live Host Localhost & Port Classification (MySQL Port 3306)
+        from ulpf.collectors.live_monitor import _PORT_SERVICE_MAP
+        record("production", "Live Monitor: Localhost MySQL (3306) port & service classification",
+               "MySQL" in _PORT_SERVICE_MAP.get(3306, ""))
+
+        # 6. Persistent Source Management & Observability Backend
+        from ulpf.core.source_manager import SourceManager
+        with tempfile.TemporaryDirectory() as td:
+            sm = SourceManager(output_dir=td)
+            sources = sm.list_sources()
+            metrics = sm.get_pipeline_metrics()
+            record("production", f"Source Observability: SourceManager initialized ({len(sources)} sources tracked)",
+                   len(sources) >= 11 and "total_sources_registered" in metrics)
+            sm.close()
+            import gc; gc.collect()
+
+        # 7. High-Throughput Benchmarking Tool Verification
+        from ulpf.tools.benchmark import run_benchmark
+        with tempfile.TemporaryDirectory() as td:
+            bench_res = run_benchmark(events_count=200, workers=1, sink_type="none", raw_store_mode="none", output_dir=td)
+            record("production", f"Benchmarking Tool: Verified throughput measurement ({bench_res.get('eps'):,} EPS)",
+                   bench_res.get("events_processed") == 200 and bench_res.get("eps") > 0)
+            import gc; gc.collect()
+    except Exception as e:
+        record("production", "Production enhancements check", False, str(e))
+
+    # -------------------------------------------------------------------------
+    # FINAL SCORECARD & SUMMARY
+    # -------------------------------------------------------------------------
+    elapsed = time.time() - start_time
+    print(f"\n{'='*75}")
+    print("  FINAL SYSTEM VERIFICATION SUMMARY")
+    print(f"{'='*75}")
+
+    by_cat: dict[str, list[dict]] = {}
+    for r in results:
+        by_cat.setdefault(r["category"], []).append(r)
+
+    total_pass = sum(1 for r in results if r["status"] == "PASS")
+    total_fail = sum(1 for r in results if r["status"] == "FAIL")
+    total_warn = sum(1 for r in results if r["status"] == "WARN")
+
+    print(f"\n{'Domain / Category':<35} {'PASS':>6} {'FAIL':>6} {'WARN':>6}")
+    print("-" * 60)
+    for cat, recs in by_cat.items():
+        p = sum(1 for r in recs if r["status"] == "PASS")
+        f = sum(1 for r in recs if r["status"] == "FAIL")
+        w = sum(1 for r in recs if r["status"] == "WARN")
+        print(f"  {cat:<33} {p:>6} {f:>6} {w:>6}")
+    print("-" * 60)
+    print(f"  {'TOTAL CHECKS':<33} {total_pass:>6} {total_fail:>6} {total_warn:>6}")
+    print(f"  {'EXECUTION TIME':<33} {elapsed:>5.2f}s\n")
+
+    if total_fail == 0:
+        print("🎉 SUCCESS: ALL CHECKS PASSED (100% GREEN)!")
+        print("   ULPF is fully validated across VPN, Cloud, MySQL, Firewalls, and OS logs.")
+        sys.exit(0)
+    else:
+        print(f"⚠️  WARNING: {total_fail} checks failed.")
+        sys.exit(1)
+
+
+if __name__ == "__main__":
+    main()

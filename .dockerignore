@@ -1,35 +1,45 @@
-# Keep the Docker build context small and air-gap-clean — the builder
-# stage does `COPY . .`, so anything listed here never enters the image.
+# Keeps the build context small and air-gap-clean. The builder stage runs
+# `COPY . .`, so anything listed here never enters the image.
 
 .git/
-.gitignore
+.github/
 
-# Host virtual environment — never ship this into the build context
+# Host virtual environments — never ship these into the build context
 env/
 venv/
 .venv/
 ENV/
 
-# Byte-compiled / caches
+# Build and cache artifacts
 __pycache__/
 *.py[cod]
 *.egg-info/
+build/
+dist/
 .pytest_cache/
+.ruff_cache/
+.mypy_cache/
 .coverage
 .coverage.*
 htmlcov/
+coverage.xml
 
-# Pipeline run outputs (local dev artifacts, not part of the image)
+# Pipeline run outputs and local databases
 output/
 output_*/
+benchmark_output/
 *.db
 *.sqlite
 *.sqlite3
 
-# Docs / non-runtime assets not needed inside the image
+# Not needed inside the image
 docs/
-RELEASE_UPDATES.txt
+tests/
+scripts/
+tools/
+CHANGELOG.md
 *.bat
+*.vbs
 
 # OS / editor
 .DS_Store

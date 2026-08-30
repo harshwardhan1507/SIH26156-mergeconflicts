@@ -1,5 +1,0 @@
-<38>Aug 15 12:34:56 proxy01 squid[2048]: TCP_MISS/200 4321 GET http://cdn.example.com/asset.js - DIRECT/93.184.216.34 text/javascript
-<36>Aug 15 12:35:22 fw-edge01 kernel[0]: DROP IN=eth0 OUT= MAC=00:50:56:01:02:03:00:0c:29:aa:bb:cc:08:00 SRC=198.51.100.44 DST=10.10.1.5 LEN=60 TTL=49 PROTO=TCP SPT=41234 DPT=22
-<86>Aug 15 12:36:01 auth-server sshd[1122]: Accepted publickey for devops from 10.0.1.25 port 54321 ssh2: RSA SHA256:abc123def456
-<30>Aug 15 12:37:15 ids-sensor02 snort[3301]: [1:1000002:1] ICMP flood detected [Priority: 2] {ICMP} 203.0.113.10 -> 10.10.1.1
-<166>Aug 15 12:40:00 router02 ospfd[7744]: Neighbor 10.0.0.2 transition from ExStart to Exchange on interface eth1

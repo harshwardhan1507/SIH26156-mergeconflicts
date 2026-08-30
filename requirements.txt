@@ -1,11 +1,8 @@
-# Runtime dependencies only — mirrors [project.dependencies] in pyproject.toml.
-# Test/dev tooling lives in requirements-dev.txt so the air-gapped wheelhouse
-# and the Docker build don't waste time/space building wheels that are never
-# installed into the runtime image.
+# Framework runtime dependencies — mirrors [project.dependencies] in pyproject.toml.
+# The dashboard's web stack is NOT here: install it with `pip install "ulpf[dashboard]"`
+# so an air-gapped pipeline deployment never has to vendor FastAPI and uvicorn.
 pydantic>=2.0
 jsonschema>=4.17
 click>=8.1
 pyyaml>=6.0
 python-dateutil>=2.8
-fastapi>=0.110.0
-uvicorn>=0.28.0

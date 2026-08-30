@@ -1,5 +1,0 @@
-<134>1 2024-03-15T10:22:45.123456+00:00 fw01.corp.example.com sshd 1234 ID47 [exampleSDID@32473 iut="3" eventSource="Application"] User login accepted for user alice from 203.0.113.5
-<165>1 2024-03-15T10:23:01.000000+00:00 ids01.corp.example.com snort 5678 - - [rule@12345 sid="1000001" rev="1"] ALERT TCP scan detected from 198.51.100.10 to 10.0.0.1
-<150>1 2024-03-15T10:25:10.500000+00:00 proxy01.corp.example.com squid 9012 REQ - GET http://updates.example.com/package.tar.gz 200 54321 - -
-<162>1 2024-03-15T10:27:33.000000+00:00 router01.corp.example.com syslogd 1 SYSTEM - System startup complete, interface GigabitEthernet0/0 is up
-<166>1 2024-03-15T10:29:00.000000+00:00 vpn01.corp.example.com vpnd 3344 VPN [vpn@99999 user="bob" tunnel="L2TP"] VPN tunnel established successfully

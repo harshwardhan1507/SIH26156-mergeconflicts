@@ -21,6 +21,7 @@ sdist/
 var/
 wheels/
 *.egg-info/
+src/*.egg-info/
 .installed.cfg
 *.egg
 
@@ -29,6 +30,10 @@ venv/
 .venv/
 ENV/
 env/
+
+# Tooling caches
+.ruff_cache/
+.mypy_cache/
 
 # Testing & Coverage
 .pytest_cache/

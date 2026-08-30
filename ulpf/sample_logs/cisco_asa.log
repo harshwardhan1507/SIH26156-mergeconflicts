@@ -1,5 +1,0 @@
-<166>Aug 15 14:22:10 asa01.corp.example.com %ASA-6-106100: access-list OUTSIDE_IN permitted tcp OUTSIDE/10.0.0.5(44123) -> INSIDE/192.168.1.100(443) hit-cnt 1
-<162>Aug 15 14:23:01 asa01.corp.example.com %ASA-2-106016: Deny IP spoof from (10.0.0.99) to 192.168.1.50 on interface OUTSIDE
-<165>Aug 15 14:24:33 asa01.corp.example.com %ASA-5-304001: 192.168.1.5 Accessed URL 203.0.113.10:/confidential.pdf
-<164>Aug 15 14:25:00 asa01.corp.example.com %ASA-4-313004: Denied ICMP type=8, from laddr 198.51.100.77 on interface OUTSIDE to 10.10.10.1
-<170>Aug 15 14:26:15 asa01.corp.example.com %ASA-6-302013: Built inbound TCP connection 123456 for OUTSIDE:203.0.113.22/55123 (203.0.113.22/55123) to INSIDE:10.0.1.80/8080 (10.0.1.80/8080)

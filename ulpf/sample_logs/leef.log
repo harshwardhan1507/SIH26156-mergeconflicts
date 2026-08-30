@@ -1,7 +1,0 @@
-LEEF:1.0|IBM|QRadar|7.3.3|Firewall-Allow|src=10.10.0.5	spt=54321	dst=172.217.14.36	dpt=443	proto=TCP	usrName=jdoe	sev=3	action=allow	srcBytes=1240	dstBytes=8800	devTime=Aug 27 2026 08:00:01
-LEEF:1.0|IBM|QRadar|7.3.3|Firewall-Deny|src=185.234.219.5	spt=23	dst=10.10.0.1	dpt=22	proto=TCP	usrName=	sev=8	action=deny	msg=SSH brute force attempt blocked	devTime=Aug 27 2026 08:00:45
-LEEF:1.0|IBM|QRadar|7.3.3|IPS-Alert|src=192.168.5.200	spt=50001	dst=10.0.0.254	dpt=80	proto=TCP	usrName=	sev=9	action=block	msg=SQL Injection attempt detected	cat=threat	devTime=Aug 27 2026 08:01:02
-LEEF:1.0|IBM|QRadar|7.3.3|Auth-Failure|src=10.10.0.20	spt=1024	dst=10.10.0.250	dpt=389	proto=TCP	usrName=bob.smith	sev=7	action=deny	outcome=failure	msg=LDAP bind authentication failed	devTime=Aug 27 2026 08:02:10
-LEEF:2.0|IBM|QRadar|7.3.3|Policy-Violation|^|src=10.20.0.15^spt=8080^dst=203.0.113.99^dpt=8080^proto=TCP^usrName=alice^sev=6^action=block^msg=Unauthorized outbound proxy detected^cat=policy^devTime=Aug 27 2026 08:03:30
-LEEF:2.0|IBM|QRadar|7.3.3|Data-Exfil|^|src=10.30.0.88^spt=62000^dst=198.51.100.44^dpt=443^proto=TCP^usrName=contractor1^sev=high^action=allow^srcBytes=204800^dstBytes=500^msg=Large outbound transfer to unknown external IP^cat=threat^devTime=Aug 27 2026 08:05:00
-LEEF:1.0|IBM|QRadar|7.3.3|VPN-Connect|src=203.0.113.77	spt=500	dst=10.0.0.1	dpt=4500	proto=UDP	usrName=remote.user	sev=3	action=allow	outcome=success	msg=IPSec VPN session established	devTime=Aug 27 2026 08:07:22

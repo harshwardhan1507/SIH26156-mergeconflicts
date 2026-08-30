@@ -3,11 +3,10 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/NotUrNio/ULPF"><img src="https://img.shields.io/badge/tests-180%20passed-10b981?logo=pytest&logoColor=white" alt="tests" /></a>
+  <a href="https://github.com/NotUrNio/ULPF"><img src="https://img.shields.io/badge/tests-256%20passed-10b981?logo=pytest&logoColor=white" alt="tests" /></a>
   <a href="https://www.python.org/"><img src="https://img.shields.io/badge/python-3.11%2B-blue?logo=python&logoColor=white" alt="python" /></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-green" alt="license" /></a>
-  <a href="docker/Dockerfile"><img src="https://img.shields.io/badge/docker-air--gapped%20ready-0f766e?logo=docker&logoColor=white" alt="docker" /></a>
-  <a href="https://github.com/NotUrNio/ULPF"><img src="https://img.shields.io/badge/SIH--2026-SIH26156-purple" alt="SIH26156" /></a>
+  <a href="deploy/docker/Dockerfile"><img src="https://img.shields.io/badge/docker-air--gapped%20ready-0f766e?logo=docker&logoColor=white" alt="docker" /></a>
 </p>
 
 <p align="center">
@@ -28,7 +27,7 @@ Every raw event's authentic bytes are hashed and persisted **before** detection/
 ## Why ULPF
 
 - **Zero information loss & Segmented Raw Storage** — raw bytes are hashed and written to disk *before* detection or parsing. Supports file-sharded mode or high-throughput append-only segmented chunk storage (`raw/YYYY/MM/DD/tenant/segment-000001.bin`) with $O(1)$ random seek. Anything unmapped by a parser's YAML lands in `vendor_attributes`.
-- **No-Code Declarative Onboarding & Live Inference** — onboard custom proprietary log formats with zero Python code via YAML configs (`ulpf/schemas/declarative_sources/`). Features built-in schema validation and sample string auto-inference (`infer_declarative_mapping`).
+- **No-Code Declarative Onboarding & Live Inference** — onboard custom proprietary log formats with zero Python code via YAML configs (`src/ulpf/schemas/declarative_sources/`). Features built-in schema validation and sample string auto-inference (`infer_declarative_mapping`).
 - **Event Framing Layer & Max-Bytes Quarantine** — handles stream framing across Line delimiters, Multiline Stacktrace regexes (`^\d{4}-\d{2}-\d{2}`), JSON byte streams, and RFC 5425/6587 Syslog octet counting with oversized event quarantine.
 - **OCSF & ECS Crosswalk Standards Translation** — translates UES normalized events into Open Cybersecurity Schema Framework (OCSF v1.1.0, classes 4001, 3001, 2001, 1001, 5001, 6004) and Elastic Common Schema (ECS v8.11.0).
 - **11 out-of-the-box log parsers** — Syslog RFC 5424/3164, CEF (ArcSight/Fortinet/Snort/CheckPoint), LEEF 1.0/2.0 (IBM QRadar), Windows Event Log / Generic XML, Cisco ASA, Palo Alto Networks CSV, AWS CloudTrail, Azure Monitor, GCP Cloud Audit, and JSON Passthrough.
@@ -38,8 +37,8 @@ Every raw event's authentic bytes are hashed and persisted **before** detection/
 - **Multi-sink fan-out** — `--sink ndjson,parquet,cef-egress,leef-egress` writes normalized events to a data lake and legacy SIEM receivers concurrently.
 - **Offline IP & threat enrichment** — pure Python, air-gap safe classification for RFC 1918 private ranges, cloud ASN recognition (AWS, Azure, GCP, Cloudflare), and embedded threat intel feeds.
 - **Statistical anomaly detection engine** — pure Python Z-score deviation (>3σ), IQR byte-volume outlier detection, frequency burst detection, and 24-dim ML feature vectors (`ulpf analyze --emit-features`).
-- **REST API & Interactive Operations Dashboard** — FastAPI backend with SQLite indexer, live SSE streaming, Sources Management & Onboarding Wizard modal, and forensic Traceability Split Inspector.
-- **173 Pytest tests & 79 master audit checks, 100% green** — comprehensive unit, declarative onboarding, framing, segmented store, crosswalk, live telemetry, and end-to-end integration tests.
+- **Optional operations dashboard, cleanly separated** — the `ulpf_dashboard` distribution (FastAPI, SQLite indexer, SSE streaming, onboarding wizard, forensic inspector) depends on the framework, never the reverse. `pip install ulpf` gives you a pipeline with no web server in it; `pip install "ulpf[dashboard]"` adds the UI.
+- **256 tests, green on Linux/macOS/Windows across Python 3.11-3.13** — unit, declarative onboarding, framing, segmented-store concurrency, crosswalk, egress escaping, architectural boundary, and end-to-end integration tests, plus `ruff` and `mypy` in CI.
 
 ---
 
@@ -81,11 +80,19 @@ Every raw event's authentic bytes are hashed and persisted **before** detection/
 
 ## Requirements
 
-- Python 3.11+
+- Python 3.11+ (tested on 3.11, 3.12, 3.13)
 - pip 23+
-- Dependencies: `pyyaml`, `jsonschema`, `click`, `python-dateutil`, `pydantic`, `fastapi`, `uvicorn`
-- Optional: `kafka-python` (`pip install ulpf[kafka]`, for live Kafka streaming — falls back to local NDJSON otherwise)
-- Optional: `pyarrow` (`pip install ulpf[parquet]`, for real columnar Parquet output — falls back to partitioned NDJSON otherwise)
+
+**Framework** (`pip install ulpf`) — `pyyaml`, `jsonschema`, `click`, `python-dateutil`, `pydantic`. No web server.
+
+**Optional extras**
+
+| Extra | Install | Adds |
+|---|---|---|
+| `dashboard` | `pip install "ulpf[dashboard]"` | FastAPI + uvicorn operations dashboard |
+| `parquet` | `pip install "ulpf[parquet]"` | Real columnar Parquet output (falls back to partitioned NDJSON) |
+| `kafka` | `pip install "ulpf[kafka]"` | Live Kafka streaming (falls back to local NDJSON) |
+| `dev` | `pip install -e ".[dev]"` | Test, lint, and type-check tooling |
 
 ---
 
@@ -94,7 +101,15 @@ Every raw event's authentic bytes are hashed and persisted **before** detection/
 ```bash
 git clone https://github.com/NotUrNio/ULPF.git
 cd ULPF
-pip install -e .[dev]
+
+# Framework only — no web stack is installed
+pip install -e .
+
+# Framework plus the operations dashboard
+pip install -e ".[dashboard]"
+
+# Everything, including test and lint tooling
+pip install -e ".[dev]"
 ```
 
 Verify installed parsers:
@@ -109,11 +124,13 @@ ulpf list-parsers
 # On an internet-connected machine (requirements.txt is runtime-only —
 # dev/test tooling lives in requirements-dev.txt and is not needed in
 # an air-gapped deployment):
-pip download -r requirements.txt -d ./wheelhouse
-pip wheel . --no-deps -w ./wheelhouse
+# Framework only (smallest air-gapped footprint):
+pip wheel . -w ./wheelhouse
+
+# Or framework + dashboard:
+pip wheel ".[dashboard]" -w ./wheelhouse
 
 # Copy wheelhouse/ to the air-gapped machine, then:
-pip install --no-index --find-links ./wheelhouse -r requirements.txt
 pip install --no-index --find-links ./wheelhouse ulpf
 ```
 
@@ -125,10 +142,10 @@ pip install --no-index --find-links ./wheelhouse ulpf
 
 ```bash
 # Ingest all sample logs into NDJSON + Raw Store
-ulpf ingest --input ulpf/sample_logs/ --output output/
+ulpf ingest --input examples/sample_logs/ --output output/
 
 # Ingest single file
-ulpf ingest --input ulpf/sample_logs/cisco_asa.log --output output/
+ulpf ingest --input examples/sample_logs/cisco_asa.log --output output/
 
 # Ingest from stdin (pipe)
 cat /var/log/syslog | ulpf ingest --input - --output output/
@@ -137,10 +154,10 @@ cat /var/log/syslog | ulpf ingest --input - --output output/
 ulpf ingest --input /var/log/sources/ --output output/ --workers 4
 
 # Ingest directly to Kafka topic (with auto local fallback)
-ulpf ingest --input ulpf/sample_logs/ --output output/ --sink kafka-real
+ulpf ingest --input examples/sample_logs/ --output output/ --sink kafka-real
 
 # Fan out to multiple sinks in one run: NDJSON + Parquet data lake + legacy CEF/LEEF egress
-ulpf ingest --input ulpf/sample_logs/ --output output/ --sink ndjson,parquet,cef-egress,leef-egress
+ulpf ingest --input examples/sample_logs/ --output output/ --sink ndjson,parquet,cef-egress,leef-egress
 
 # Tag events from a specific tenant/business unit
 ulpf ingest --input /var/log/tenant-a/ --output output/ --tenant-id tenant-a
@@ -283,14 +300,23 @@ ulpf list-parsers  # my_device appears automatically
 ## Tests
 
 ```bash
-# Run Master System Verification (Tests VPN, Cloud, MySQL, Windows, Live Host, SHA-256)
-python test_all.py
+# Full suite (unit, integration, dashboard, architectural boundaries)
+pytest
 
-# Run all 132 unit and integration tests via Pytest
-pytest ulpf/tests/ -v
+# One layer at a time
+pytest tests/unit
+pytest tests/integration
+pytest tests/dashboard
 
-# Run with test coverage
-pytest ulpf/tests/ -v --cov=ulpf --cov-report=term-missing
+# With coverage
+pytest --cov --cov-report=term-missing
+
+# Lint and type-check, as CI runs them
+ruff check src tests
+mypy
+
+# Operator smoke test against a running deployment (not part of the suite)
+python tests/system_verification.py
 ```
 
 ---
@@ -298,15 +324,17 @@ pytest ulpf/tests/ -v --cov=ulpf --cov-report=term-missing
 ## Docker Deployment
 
 ```bash
-# Build air-gapped image
-docker compose -f docker/docker-compose.yml build
+# Batch pipeline, fully air-gapped (network_mode: none)
+docker compose -f deploy/docker/docker-compose.yml up ulpf
 
-# Run pipeline + dashboard
-docker compose -f docker/docker-compose.yml up
+# Dashboard. ULPF_API_KEY is required — the write endpoints are
+# unauthenticated without it.
+ULPF_API_KEY="$(openssl rand -hex 24)" \
+  docker compose -f deploy/docker/docker-compose.yml up dashboard
 ```
 
 ---
 
 ## License
 
-[MIT](LICENSE) © 2026 NotUrNio
+[MIT](LICENSE) © 2026 ULPF Project

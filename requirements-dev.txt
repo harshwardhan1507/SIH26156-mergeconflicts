@@ -1,7 +1,13 @@
-# Dev/test-only tooling — mirrors [project.optional-dependencies].dev in pyproject.toml.
-# Not installed into the Docker runtime image; used for `pip install -e .[dev]` and CI.
+# Development and CI tooling. Prefer `pip install -e ".[dev]"`; this file exists
+# for tools that cannot read optional-dependency extras.
 -r requirements.txt
+fastapi>=0.110.0
+uvicorn>=0.28.0
 pytest>=7.4
 pytest-cov>=4.0
-httpx>=0.27.0
 pytest-asyncio>=0.23.0
+httpx>=0.27.0
+ruff>=0.4
+mypy>=1.9
+types-PyYAML
+types-python-dateutil

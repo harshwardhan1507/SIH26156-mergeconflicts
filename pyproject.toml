@@ -4,35 +4,77 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "ulpf"
-version = "1.2.0"
-description = "Universal Log Pre-processing Framework"
+version = "1.3.0"
+description = "Universal Log Pre-processing Framework — vendor-agnostic security log normalization"
+readme = "README.md"
+license = { file = "LICENSE" }
 requires-python = ">=3.11"
+keywords = ["logging", "siem", "normalization", "security", "ocsf", "ecs", "syslog"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: System Administrators",
+    "Topic :: Security",
+    "Topic :: System :: Logging",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Operating System :: OS Independent",
+]
+
+# Framework runtime dependencies only. The web stack lives in the `dashboard`
+# extra so that `pip install ulpf` yields a pipeline with no HTTP server in it.
 dependencies = [
     "pydantic>=2.0",
     "jsonschema>=4.17",
     "click>=8.1",
     "pyyaml>=6.0",
     "python-dateutil>=2.8",
+]
+
+[project.optional-dependencies]
+# Operations dashboard: FastAPI app, SQLite indexer, SSE stream, static frontend.
+dashboard = [
     "fastapi>=0.110.0",
     "uvicorn>=0.28.0",
+]
+# Columnar Parquet output for ParquetSink. Without it the sink falls back to a
+# partitioned NDJSON layout, which keeps air-gapped sites working before pyarrow
+# is vetted into their wheelhouse.
+parquet = ["pyarrow>=14.0"]
+# Real Kafka streaming for `--sink kafka-real`; falls back to a local NDJSON
+# file when absent.
+kafka = ["kafka-python>=2.0"]
+dev = [
+    "ulpf[dashboard,parquet]",
+    "pytest>=7.4",
+    "pytest-cov>=4.0",
+    "pytest-asyncio>=0.23.0",
+    "httpx>=0.27.0",
+    "ruff>=0.4",
+    "mypy>=1.9",
+    "types-PyYAML",
+    "types-python-dateutil",
 ]
 
 [project.scripts]
 ulpf = "ulpf.cli:main"
-ulpf-dashboard = "ulpf.dashboard.app:main"
+ulpf-dashboard = "ulpf_dashboard.server:main"
 
-[project.optional-dependencies]
-dev = ["pytest>=7.4", "pytest-cov>=4.0", "httpx>=0.27.0", "pytest-asyncio>=0.23.0"]
-# Optional: real columnar Parquet output for ParquetSink (ulpf/sinks/parquet_sink.py).
-# Without it, ParquetSink falls back to a partitioned NDJSON layout automatically —
-# useful for air-gapped sites that haven't vetted pyarrow into their wheelhouse yet.
-parquet = ["pyarrow>=14.0"]
-# Optional: real Kafka streaming for KafkaProducerSink (--sink kafka-real).
-# Without it, ingest --sink kafka-real falls back to a local NDJSON file automatically.
-kafka = ["kafka-python>=2.0"]
+[project.urls]
+Homepage = "https://github.com/NotUrNio/ULPF"
+Documentation = "https://github.com/NotUrNio/ULPF/tree/main/docs"
+Issues = "https://github.com/NotUrNio/ULPF/issues"
 
+# ---------------------------------------------------------------------------
+# Packaging
+# ---------------------------------------------------------------------------
+# src/ layout with an explicit include list. The previous flat layout let
+# setuptools auto-discover every top-level directory, so the repository's own
+# `packaging/` build-scripts folder shipped as a top-level `packaging` module —
+# shadowing the real `packaging` library that pip and setuptools depend on.
 [tool.setuptools.packages.find]
-where = ["."]  # ulpf is the top-level package
+where = ["src"]
+include = ["ulpf*", "ulpf_dashboard*"]
 
 [tool.setuptools.package-data]
 ulpf = [
@@ -40,8 +82,93 @@ ulpf = [
     "schemas/mappings/*.yaml",
     "schemas/declarative_sources/*.yaml",
     "config/*.yaml",
-    "dashboard/static/*",
+    "py.typed",
+]
+ulpf_dashboard = ["static/*", "py.typed"]
+
+# ---------------------------------------------------------------------------
+# Tooling
+# ---------------------------------------------------------------------------
+[tool.pytest.ini_options]
+minversion = "7.4"
+testpaths = ["tests"]
+# `system_verification.py` is an operator smoke-test script, not a pytest module.
+addopts = "-q --strict-markers --strict-config"
+asyncio_mode = "auto"
+markers = [
+    "slow: tests that take more than a second",
+    "network: tests that bind sockets or need localhost networking",
+]
+filterwarnings = ["error::DeprecationWarning:ulpf.*"]
+
+[tool.coverage.run]
+source = ["ulpf", "ulpf_dashboard"]
+branch = true
+
+[tool.coverage.report]
+exclude_lines = ["pragma: no cover", "if TYPE_CHECKING:", "raise NotImplementedError"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = [
+    "E",    # pycodestyle
+    "F",    # pyflakes
+    "I",    # import sorting
+    "B",    # bugbear
+    "UP",   # pyupgrade
+    "SIM",  # simplify
+    "RUF",  # ruff-specific
+    "C4",   # comprehensions
+    "PTH",  # prefer pathlib
+    "S",    # bandit security checks
+]
+ignore = [
+    "E501",   # line length is enforced by the formatter, not the linter
+    "S101",   # assert is fine in tests
+    "S603",   # subprocess arguments are constructed internally, never from input
+    "S607",   # partial executable paths are intentional for platform tools
+    "S310",   # urlopen targets are locally-constructed http://127.0.0.1 URLs
+    "S324",   # SHA-256 is used for content addressing; the finding targets MD5/SHA-1
+    "S608",   # SQL is built from allowlisted column names, values stay parameterized
+    "PTH123", # open() is idiomatic and reads better than Path.open() here
+    "SIM105", # contextlib.suppress obscures short, commented best-effort blocks
+    "SIM115", # long-lived sinks own their handles across calls, by design
+    "S110",   # best-effort detector/parser probes: a failed candidate means
+              # "not this format", and logging every miss would be pure noise
+    "RUF001", # sigma and similar symbols are intentional in analytics messages
+    "RUF012", # ClassVar annotations add noise to plain lookup tables
+    "B027",   # RawStoreBase.close() is an optional hook, deliberately concrete
 ]
 
-[tool.pytest.ini_options]
-asyncio_mode = "auto"
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["S", "E501", "B017"]
+# Operator smoke-test script rather than a pytest module: its inline imports and
+# terse one-liners are deliberate and it is not imported by the suite.
+"tests/system_verification.py" = ["ALL"]
+"tools/*" = ["S", "E501"]
+# Every "0.0.0.0" here is an address compared against a socket table, not a bind.
+"src/ulpf/collectors/live_monitor.py" = ["S104"]
+
+[tool.mypy]
+python_version = "3.11"
+files = ["src"]
+warn_unused_configs = true
+warn_redundant_casts = true
+warn_unused_ignores = true
+no_implicit_optional = true
+disallow_untyped_defs = false
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = ["ulpf.core.*", "ulpf.runtime", "ulpf.resources"]
+disallow_untyped_defs = true
+
+# Windows-only ctypes structures and win32 API surface. These cannot type-check
+# on a non-Windows host, where `ctypes.windll` simply does not exist.
+[[tool.mypy.overrides]]
+module = ["ulpf.collectors.live_monitor"]
+ignore_errors = true

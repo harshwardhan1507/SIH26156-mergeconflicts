@@ -1,5 +1,0 @@
-{"ts":"2024-03-15T10:22:45Z","host":"vpn-gw01","event":"vpn_connect","user":"alice","src":"203.0.113.5","dst":"10.0.0.1","proto":"udp","bytes_in":1234,"bytes_out":5678,"result":"success","severity":3}
-{"ts":"2024-03-15T10:23:11Z","host":"proxy01","event":"url_blocked","user":"bob","src":"10.0.1.50","dst":"198.51.100.200","proto":"tcp","bytes_in":512,"bytes_out":2048,"result":"failure","severity":7,"url":"http://malware.example.bad/payload.exe"}
-{"ts":"2024-03-15T10:25:00Z","host":"fw-edge01","event":"port_scan_detected","src":"203.0.113.99","dst":"10.10.0.0","proto":"tcp","bytes_in":0,"bytes_out":0,"result":"failure","severity":9}
-{"@timestamp":"2024-03-15T10:27:30Z","host":"router01","event":"bgp_peer_down","peer":"10.0.0.254","as":65001,"result":"failure","severity":8}
-{"ts":"2024-03-15T10:28:45Z","host":"ids01","event":"malware_alert","src":"10.5.0.22","dst":"93.184.216.34","proto":"tcp","bytes_in":4096,"bytes_out":512,"result":"failure","severity":10,"signature":"Trojan.GenericKD.12345"}
