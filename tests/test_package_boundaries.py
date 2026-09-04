@@ -92,7 +92,11 @@ from ulpf.runtime import build_session
 print("OK", ulpf.__version__)
 """
     result = subprocess.run(
-        [sys.executable, "-c", script], capture_output=True, text=True, timeout=120
+        [sys.executable, "-c", script],
+        capture_output=True,
+        text=True,
+        timeout=120,
+        stdin=subprocess.DEVNULL,
     )
     assert result.returncode == 0, result.stderr
     assert "OK" in result.stdout

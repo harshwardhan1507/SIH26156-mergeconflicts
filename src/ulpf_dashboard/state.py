@@ -25,7 +25,7 @@ logger = logging.getLogger(__name__)
 class AppState:
     """Owns the long-lived resources backing one dashboard application."""
 
-    def __init__(self, output_dir: Path, host: str = "127.0.0.1", port: int = 8000) -> None:
+    def __init__(self, output_dir: Path, host: str = "127.0.0.1", port: int = 7000) -> None:
         self.output_dir = output_dir
         self.host = host
         self.port = port

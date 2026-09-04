@@ -37,7 +37,7 @@ def _loopback(host: str) -> str:
     return "127.0.0.1" if host in ("0.0.0.0", "::", "localhost") else host  # noqa: S104
 
 
-def is_running(host: str = "127.0.0.1", port: int = 8000, timeout: float = 1.0) -> bool:
+def is_running(host: str = "127.0.0.1", port: int = 7000, timeout: float = 1.0) -> bool:
     """True when a ULPF dashboard is already answering on this address."""
     url = f"http://{_loopback(host)}:{port}/api/health"
     try:
@@ -48,7 +48,7 @@ def is_running(host: str = "127.0.0.1", port: int = 8000, timeout: float = 1.0) 
         return False
 
 
-def wait_for_server(host: str = "127.0.0.1", port: int = 8000, timeout: float = 8.0) -> bool:
+def wait_for_server(host: str = "127.0.0.1", port: int = 7000, timeout: float = 8.0) -> bool:
     """Poll until the server answers, or the timeout expires."""
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
@@ -58,7 +58,7 @@ def wait_for_server(host: str = "127.0.0.1", port: int = 8000, timeout: float = 
     return False
 
 
-def find_available_port(host: str = "127.0.0.1", start_port: int = 8000, attempts: int = 50) -> int:
+def find_available_port(host: str = "127.0.0.1", start_port: int = 7000, attempts: int = 50) -> int:
     """First bindable TCP port at or after ``start_port``."""
     for candidate in range(start_port, start_port + attempts):
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
@@ -109,7 +109,7 @@ def remove_pid_file(output_dir: Path) -> None:
         logger.debug("Could not remove PID file: %s", exc)
 
 
-def stop_server(output_dir: str | Path = "output", host: str = "127.0.0.1", port: int = 8000) -> bool:
+def stop_server(output_dir: str | Path = "output", host: str = "127.0.0.1", port: int = 7000) -> bool:
     """Terminate a background dashboard recorded in the PID file."""
     resolved = resolve_output_dir(output_dir)
     info = read_pid_file(resolved)
@@ -138,7 +138,7 @@ def stop_server(output_dir: str | Path = "output", host: str = "127.0.0.1", port
     return False
 
 
-def server_status(output_dir: str | Path = "output", host: str = "127.0.0.1", port: int = 8000) -> None:
+def server_status(output_dir: str | Path = "output", host: str = "127.0.0.1", port: int = 7000) -> None:
     """Print the current server status and headline metrics."""
     resolved = resolve_output_dir(output_dir)
     url = f"http://{_loopback(host)}:{port}"
@@ -224,7 +224,7 @@ def spawn_background(output_dir: Path, host: str, port: int, open_browser: bool)
               help="Pipeline output directory containing events.ndjson and raw_store/.")
 @click.option("--host", default="127.0.0.1",
               help="Bind address. Binding beyond loopback requires ULPF_API_KEY.")
-@click.option("--port", "-p", default=8000, type=int, help="Bind port.")
+@click.option("--port", "-p", default=7000, type=int, help="Bind port.")
 @click.option("--open-browser/--no-open-browser", default=True,
               help="Open the dashboard in the default browser once it is up.")
 @click.option("--background", "-b", is_flag=True, help="Run persistently in the background.")
@@ -248,13 +248,19 @@ def main(
         format="%(asctime)s %(levelname)-8s %(name)s: %(message)s",
     )
 
-    if stop:
-        sys.exit(0 if stop_server(output_dir or "output", host, port) else 1)
-    if status:
-        server_status(output_dir or "output", host, port)
-        return
-
     resolved = resolve_output_dir(output_dir)
+    from ulpf_dashboard.routers.settings import load_dashboard_config
+    cfg = load_dashboard_config(resolved)
+    if port == 7000 and "port" in cfg:
+        port = int(cfg["port"])
+    if open_browser and not cfg.get("auto_open_browser", True):
+        open_browser = False
+
+    if stop:
+        sys.exit(0 if stop_server(resolved, host, port) else 1)
+    if status:
+        server_status(resolved, host, port)
+        return
 
     if background:
         spawn_background(resolved, host, port, open_browser)

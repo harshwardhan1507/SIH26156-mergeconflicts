@@ -44,7 +44,7 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
 def create_app(
     output_dir: str | Path | None = None,
     host: str = "127.0.0.1",
-    port: int = 8000,
+    port: int = 7000,
 ) -> FastAPI:
     """
     Build a configured dashboard application.

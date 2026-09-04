@@ -236,3 +236,39 @@ def test_api_endpoints(sample_output_dir):
     assert "anomalies" in data_anomalies
     assert "total_analyzed" in data_anomalies
 
+
+def test_dashboard_settings_endpoints(sample_output_dir):
+    """Test retrieving settings and updating port configuration."""
+    app = create_app(output_dir=sample_output_dir)
+    client = TestClient(app)
+
+    # 1. GET /api/settings
+    res = client.get("/api/settings")
+    assert res.status_code == 200
+    data = res.json()
+    assert "current_port" in data
+    assert "configured_port" in data
+    assert "auto_open_browser" in data
+    assert data["current_port"] == 7000
+
+    # 2. POST /api/settings/port with valid port (restart=False)
+    res_update = client.post("/api/settings/port", json={"port": 7005, "restart": False, "auto_open_browser": False})
+    assert res_update.status_code == 200
+    res_json = res_update.json()
+    assert res_json["status"] == "ok"
+    assert "7005" in res_json["redirect_url"]
+
+    # Verify persistent config was written
+    cfg_file = sample_output_dir / "dashboard_config.json"
+    assert cfg_file.exists()
+    saved = json.loads(cfg_file.read_text(encoding="utf-8"))
+    assert saved["port"] == 7005
+    assert saved["auto_open_browser"] is False
+
+    # 3. POST /api/settings/port with invalid port
+    res_bad = client.post("/api/settings/port", json={"port": 99999, "restart": False})
+    assert res_bad.status_code in (400, 422)
+
+    res_low = client.post("/api/settings/port", json={"port": 80, "restart": False})
+    assert res_low.status_code in (400, 422)
+

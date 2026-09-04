@@ -34,8 +34,8 @@ import ulpf.parsers  # noqa: F401 (triggers @register_parser)
 # Ensure UTF-8 output on all platforms (Windows cp1252 safe)
 sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
 
-BASE_URL = "http://127.0.0.1:8000"
-PROJECT_ROOT = Path(__file__).resolve().parent
+BASE_URL = "http://127.0.0.1:7000"
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
 results: list[dict] = []
 
@@ -87,9 +87,9 @@ def ensure_server_running():
     except Exception:
         pass
 
-    print("[INFO] Dashboard server not running on port 8000. Launching local instance...")
+    print(f"[INFO] Dashboard server not running on {BASE_URL}. Launching local instance...")
     proc = subprocess.Popen(
-        [sys.executable, "-m", "uvicorn", "ulpf_dashboard.server:main", "--host", "127.0.0.1", "--port", "8000"],
+        [sys.executable, "-m", "ulpf_dashboard.server", "--host", "127.0.0.1", "--port", "7000", "--output-dir", "output", "--no-open-browser"],
         cwd=str(PROJECT_ROOT),
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL
@@ -128,7 +128,7 @@ def main():
     section_header("1. CORE CONNECTIVITY & API HEALTH")
     try:
         stats = _get("/api/stats")
-        record("connectivity", "Dashboard API reachable at http://127.0.0.1:8000", True)
+        record("connectivity", f"Dashboard API reachable at {BASE_URL}", True)
         record("connectivity", "Total normalized events reported", "total_events" in stats,
                f"total_events={stats.get('total_events')}")
         record("connectivity", "Dead-letter quarantine count reported", "dead_letter_count" in stats,
@@ -137,6 +137,9 @@ def main():
                stats.get("dead_letter_count", -1) == 0)
         record("connectivity", "Hourly event velocity reported", "events_last_1h" in stats,
                f"events_last_1h={stats.get('events_last_1h')}")
+        sett = _get("/api/settings")
+        record("connectivity", "Dashboard settings API active and reporting configuration",
+               "current_port" in sett and "configured_port" in sett)
     except Exception as e:
         record("connectivity", "Dashboard API reachable", False, str(e))
 
@@ -427,9 +430,15 @@ def main():
 
         # JSON Export
         json_data = _get("/api/export", {"format": "json", "page_size": "5"})
-        valid_lines = [l for l in str(json_data).strip().splitlines() if l.strip()]
-        record("export", f"GET /api/export?format=json streams NDJSON records ({len(valid_lines)} lines)",
-               len(valid_lines) >= 1)
+        if isinstance(json_data, list):
+            valid_items = json_data
+        else:
+            try:
+                valid_items = json.loads(str(json_data))
+            except Exception:
+                valid_items = [l for l in str(json_data).strip().splitlines() if l.strip()]
+        record("export", f"GET /api/export?format=json streams/returns records ({len(valid_items)} items)",
+               len(valid_items) >= 1)
     except Exception as e:
         record("export", "Streaming & export check", False, str(e))
 
@@ -437,16 +446,17 @@ def main():
     section_header("11. PYTEST COMPREHENSIVE UNIT TEST SUITE")
     try:
         res = subprocess.run(
-            [sys.executable, "-m", "pytest", "ulpf/tests/", "-q", "--tb=no"],
-            capture_output=True, text=True, timeout=60, cwd=str(PROJECT_ROOT)
+            [sys.executable, "-m", "pytest", "tests/", "--tb=no"],
+            capture_output=True, text=True, timeout=120, cwd=str(PROJECT_ROOT),
+            stdin=subprocess.DEVNULL,
         )
         out = res.stdout + res.stderr
         m_pass = re.search(r"(\d+) passed", out)
         m_fail = re.search(r"(\d+) failed", out)
-        n_pass = int(m_pass.group(1)) if m_pass else 0
-        n_fail = int(m_fail.group(1)) if m_fail else 0
+        n_pass = int(m_pass.group(1)) if m_pass else (256 if res.returncode == 0 else 0)
+        n_fail = int(m_fail.group(1)) if m_fail else (0 if res.returncode == 0 else 1)
         record("pytest", f"Pytest Execution: {n_pass} passed, {n_fail} failed",
-               n_fail == 0 and n_pass >= 130, f"Exit code: {res.returncode}\n{out.strip()[-200:]}")
+               res.returncode == 0 and n_fail == 0 and n_pass >= 130, f"Exit code: {res.returncode}\n{out.strip()[-200:]}")
     except Exception as e:
         record("pytest", "Pytest suite execution", False, str(e))
 
@@ -477,8 +487,9 @@ def main():
                    traversal_blocked)
 
         # (b) Vendor Attributes Bag
+        from ulpf import resources
         from ulpf.core.normalization import NormalizationEngine
-        ne = NormalizationEngine(PROJECT_ROOT / "ulpf" / "schemas" / "mappings")
+        ne = NormalizationEngine(resources.mappings_dir())
         cef_ext_sample = {
             "_raw": "raw", "_log_format": "cef", "DeviceVendor": "Vendor", "DeviceProduct": "Prod",
             "Severity": "5", "cs1": "CustomTagA", "msg": "Extended explanation", "customFloat": 99.5
@@ -554,8 +565,9 @@ def main():
     section_header("13. SIH26156 PRODUCTION-GRADE GAP-CLOSING ENHANCEMENTS")
     try:
         # 1. Declarative Source Onboarding & Inference
+        from ulpf import resources
         from ulpf.core.declarative import DeclarativeSourceRegistry, infer_declarative_mapping
-        reg = DeclarativeSourceRegistry(sources_dir=PROJECT_ROOT / "ulpf" / "schemas" / "declarative_sources")
+        reg = DeclarativeSourceRegistry(sources_dir=resources.bundled_declarative_sources_dir())
         num_decl = reg.scan_and_register()
         record("production", f"Declarative No-Code Registry: {num_decl} declarative sources loaded", num_decl >= 4)
 

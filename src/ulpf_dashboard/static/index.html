@@ -76,6 +76,14 @@
           <span id="colorThemeText">Dark</span>
         </button>
 
+        <!-- Dashboard Settings & Port Config button -->
+        <button id="settingsBtn" class="btn-icon" title="Dashboard Settings & Port Configuration (,)" aria-label="Settings">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="12" cy="12" r="3"></circle>
+            <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
+          </svg>
+        </button>
+
         <!-- Help shortcuts button -->
         <button id="shortcutsHelpBtn" class="btn-icon" title="Keyboard Shortcuts (?)" aria-label="Keyboard Shortcuts">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -312,55 +320,111 @@
     </section>
 
     <!-- Tab 4: Sources & Declarative Onboarding -->
-    <section id="tabContentSources" class="tab-content" style="display: none;">
-      <div class="sources-header-bar">
-        <div class="sources-title-group">
-          <h2>
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="2"><rect x="2" y="2" width="20" height="8" rx="2" ry="2"></rect><rect x="2" y="14" width="20" height="8" rx="2" ry="2"></rect><line x1="6" y1="6" x2="6.01" y2="6"></line><line x1="6" y1="18" x2="6.01" y2="18"></line></svg>
-            Enterprise Log Sources & Declarative Onboarding
-          </h2>
-          <div class="sources-subtitle">Manage perimeter log producers, check health telemetry, and onboard new vendors via no-code configuration.</div>
+    <section id="tabContentSources" class="tab-panel" style="display: none;">
+      <!-- Hero Header Bar -->
+      <div class="sources-hero-header">
+        <div class="sources-title-wrap">
+          <div class="sources-radar-icon">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <rect x="2" y="2" width="20" height="8" rx="2" ry="2"></rect>
+              <rect x="2" y="14" width="20" height="8" rx="2" ry="2"></rect>
+              <line x1="6" y1="6" x2="6.01" y2="6"></line>
+              <line x1="6" y1="18" x2="6.01" y2="18"></line>
+            </svg>
+          </div>
+          <div>
+            <h2>Enterprise Log Sources & Declarative Onboarding</h2>
+            <div class="sources-sub">Manage perimeter log producers, check health telemetry, and onboard new vendors via no-code configuration.</div>
+          </div>
         </div>
+
         <div class="sources-header-actions">
-          <button id="openOnboardingBtn" class="btn btn-primary">
-            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
-            + Onboard New Source (No-Code)
+          <button id="btnRefreshSources" class="btn-conn-refresh" title="Refresh source health telemetry">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"></polyline><polyline points="1 20 1 14 7 14"></polyline><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path></svg>
+            Refresh
+          </button>
+          <button id="openOnboardingBtn" class="btn-primary" style="display: inline-flex; align-items: center; gap: 8px;">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+            <span>Onboard New Source (No-Code)</span>
           </button>
         </div>
       </div>
 
-      <!-- Sources Overview Metric Strip -->
-      <div class="source-metrics-strip">
-        <div class="src-stat-box">
-          <span class="src-stat-label">Active Sources</span>
-          <span id="srcStatActive" class="src-stat-val">11</span>
+      <!-- Sources Overview Cyber Metric Grid -->
+      <div class="sources-metrics-grid">
+        <div class="sources-metric-card">
+          <div class="conn-card-icon blue">📦</div>
+          <div class="conn-card-content">
+            <span class="conn-card-label">Active Sources</span>
+            <span id="srcStatActive" class="conn-card-val">16 / 16</span>
+          </div>
         </div>
-        <div class="src-stat-box">
-          <span class="src-stat-label">Total Ingestion (EPS)</span>
-          <span id="srcStatEPS" class="src-stat-val">--</span>
+        <div class="sources-metric-card">
+          <div class="conn-card-icon purple">⚡</div>
+          <div class="conn-card-content">
+            <span class="conn-card-label">Total Ingestion (EPS)</span>
+            <span id="srcStatEPS" class="conn-card-val">0 events</span>
+          </div>
         </div>
-        <div class="src-stat-box">
-          <span class="src-stat-label">Pipeline Validity</span>
-          <span id="srcStatValidity" class="src-stat-val" style="color: var(--color-success);">100%</span>
+        <div class="sources-metric-card">
+          <div class="conn-card-icon green">🛡️</div>
+          <div class="conn-card-content">
+            <span class="conn-card-label">Pipeline Validity</span>
+            <span id="srcStatValidity" class="conn-card-val" style="color: #10b981;">100%</span>
+          </div>
         </div>
-        <div class="src-stat-box">
-          <span class="src-stat-label">Dead-Letter Count</span>
-          <span id="srcStatDLQ" class="src-stat-val">0</span>
+        <div class="sources-metric-card">
+          <div class="conn-card-icon amber">⚠️</div>
+          <div class="conn-card-content">
+            <span class="conn-card-label">Dead-Letter Quarantine</span>
+            <span id="srcStatDLQ" class="conn-card-val" style="color: #f59e0b;">0</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Quick Filter Strip & Search Bar -->
+      <div class="sources-filter-strip">
+        <div class="sources-quick-chips" id="sourceFilterChips">
+          <span class="conn-chip active" data-source-filter="all">
+            <span>🛡️ All Sources</span>
+            <span class="conn-chip-badge" id="badgeSourceAllCount">16</span>
+          </span>
+          <span class="conn-chip" data-source-filter="declarative">
+            <span>⚡ No-Code Declarative</span>
+            <span class="conn-chip-badge" id="badgeSourceDeclarativeCount">5</span>
+          </span>
+          <span class="conn-chip" data-source-filter="builtin">
+            <span>🔌 Built-in Parsers</span>
+            <span class="conn-chip-badge" id="badgeSourceBuiltinCount">11</span>
+          </span>
+          <span class="conn-chip" data-source-filter="healthy">
+            <span>● Healthy</span>
+          </span>
+          <span class="conn-chip" data-source-filter="issues">
+            <span>⚠️ Issues / DLQ</span>
+          </span>
+        </div>
+
+        <div class="search-box" style="max-width: 320px;">
+          <svg class="search-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+          </svg>
+          <input type="text" id="sourceSearchInput" placeholder="Filter sources by name, vendor, format..." style="padding: 7px 12px 7px 32px; font-size: 0.8rem;">
         </div>
       </div>
 
       <!-- Sources List Table / Cards -->
       <div class="sources-table-wrap">
-        <table class="data-table">
+        <table class="sources-table">
           <thead>
             <tr>
-              <th>SOURCE NAME / VENDOR</th>
-              <th>TYPE / FORMAT</th>
-              <th>HEALTH</th>
-              <th>EVENTS INGESTED</th>
-              <th>STATUS</th>
-              <th>LAST EVENT</th>
-              <th>ACTIONS</th>
+              <th style="min-width: 280px;">SOURCE NAME / VENDOR</th>
+              <th style="width: 170px;">TYPE & FORMAT</th>
+              <th style="width: 130px;">HEALTH</th>
+              <th style="width: 130px;">EVENTS INGESTED</th>
+              <th style="width: 100px;">STATUS</th>
+              <th style="width: 160px;">LAST EVENT</th>
+              <th style="width: 160px; text-align: center;">ACTIONS</th>
             </tr>
           </thead>
           <tbody id="sourcesTableBody">
@@ -524,11 +588,11 @@
         <div class="wizard-step">
           <label style="font-weight: 600; display: block; margin-bottom: 6px;">1. Paste Sample Raw Log Record</label>
           <textarea id="wizardSampleEvent" class="code-editor-input" rows="3" placeholder='e.g. CEF:0|MyVendor|CustomFirewall|1.0|100|Deny|5|src=10.0.0.1 dst=192.168.1.10 spt=44321 dpt=443 act=drop user=alice'></textarea>
-          <div style="display: flex; gap: 8px; margin-top: 8px;">
-            <button id="wizardInferBtn" class="pagination-btn" style="background: var(--accent); color: white; border: none;">⚡ Auto-Infer Configuration</button>
-            <button id="wizardLoadSampleKVBtn" class="pagination-btn">Load Sample Key-Value</button>
-            <button id="wizardLoadSampleCSVBtn" class="pagination-btn">Load Sample CSV</button>
-            <button id="wizardLoadSampleJSONBtn" class="pagination-btn">Load Sample JSON</button>
+          <div style="display: flex; gap: 8px; margin-top: 10px; flex-wrap: wrap;">
+            <button id="wizardInferBtn" class="btn-primary" style="padding: 6px 14px; font-size: 0.8rem;">⚡ Auto-Infer Configuration</button>
+            <button id="wizardLoadSampleKVBtn" class="port-chip">Load Key-Value</button>
+            <button id="wizardLoadSampleCSVBtn" class="port-chip">Load CSV</button>
+            <button id="wizardLoadSampleJSONBtn" class="port-chip">Load JSON</button>
           </div>
         </div>
 
@@ -536,7 +600,7 @@
         <div class="wizard-step" style="margin-top: 16px;">
           <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
             <label style="font-weight: 600;">2. Declarative Source Definition (YAML)</label>
-            <button id="wizardTestBtn" class="btn btn-primary" style="padding: 4px 12px; font-size: 0.82rem;">▶ Test Mapping Against Sample</button>
+            <button id="wizardTestBtn" class="btn-primary" style="padding: 5px 14px; font-size: 0.82rem;">▶ Test Mapping Against Sample</button>
           </div>
           <textarea id="wizardConfigYaml" class="code-editor-input mono-text" rows="12" style="font-size: 0.8rem; font-family: monospace;"></textarea>
         </div>
@@ -558,9 +622,9 @@
         </div>
       </div>
 
-      <div class="modal-footer" style="display: flex; justify-content: flex-end; gap: 10px; padding: 14px 20px; border-top: 1px solid var(--border-color);">
-        <button id="cancelOnboardingBtn" class="pagination-btn">Cancel</button>
-        <button id="saveOnboardingBtn" class="btn btn-primary" style="background: var(--color-success); border-color: var(--color-success);">✔ Save & Activate Source</button>
+      <div class="modal-footer" style="display: flex; justify-content: flex-end; gap: 10px; padding: 14px 20px; border-top: 1px solid var(--border-medium); background: var(--bg-surface-subtle);">
+        <button id="cancelOnboardingBtn" class="btn-secondary">Cancel</button>
+        <button id="saveOnboardingBtn" class="btn-primary" style="background: linear-gradient(135deg, #10b981, #059669) !important; border-color: #059669 !important;">✔ Save & Activate Source</button>
       </div>
     </div>
   </div>
@@ -611,6 +675,118 @@
             <pre id="inspectUesJson" class="code-viewer"></pre>
           </div>
         </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Settings & Port Configuration Modal -->
+  <div id="settingsModal" class="modal-backdrop">
+    <div class="modal-card" style="max-width: 580px;">
+      <div class="modal-header">
+        <div style="display: flex; align-items: center; gap: 10px;">
+          <div style="width: 32px; height: 32px; border-radius: 8px; background: rgba(6,182,212,0.15); display: flex; align-items: center; justify-content: center; color: var(--accent);">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <circle cx="12" cy="12" r="3"></circle>
+              <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
+            </svg>
+          </div>
+          <div>
+            <h2 style="margin: 0; font-size: 1.15rem; font-weight: 700;">Dashboard Settings</h2>
+            <div style="font-size: 0.78rem; color: var(--text-muted);">Server Port, Networking & UI Preferences</div>
+          </div>
+        </div>
+        <button id="closeSettingsBtn" class="btn-icon" aria-label="Close Settings">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+        </button>
+      </div>
+
+      <div class="modal-body" style="padding: 20px 24px; display: flex; flex-direction: column; gap: 20px;">
+        <!-- Server Port Section -->
+        <div class="settings-section">
+          <div class="settings-section-title">
+            <span>🌐 HTTP Server Port Configuration</span>
+            <span id="settingCurrentPortBadge" class="badge badge-success">Port <span id="currentPortVal">7000</span> Active</span>
+          </div>
+          <p style="font-size: 0.82rem; color: var(--text-muted); margin: 6px 0 12px;">
+            Change the TCP port number used by the ULPF Dashboard server. You can restart immediately on the new port or save as the default for subsequent launches.
+          </p>
+
+          <div style="display: flex; gap: 10px; align-items: center; margin-bottom: 12px;">
+            <label for="settingPortInput" style="font-weight: 600; font-size: 0.85rem; min-width: 90px;">Port Number:</label>
+            <input type="number" id="settingPortInput" class="filter-input mono-text" min="1024" max="65535" value="7000" style="width: 140px; font-size: 0.95rem; font-weight: 700; padding: 7px 10px;">
+            <div id="settingPortFeedback" style="font-size: 0.8rem; color: var(--text-muted);">Range: 1024 – 65535</div>
+          </div>
+
+          <!-- Port presets -->
+          <div style="display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin-bottom: 16px;">
+            <span style="font-size: 0.75rem; color: var(--text-muted); font-weight: 600; text-transform: uppercase;">Presets:</span>
+            <button type="button" class="port-chip" data-port="7000">7000 (Default)</button>
+            <button type="button" class="port-chip" data-port="8000">8000</button>
+            <button type="button" class="port-chip" data-port="8080">8080</button>
+            <button type="button" class="port-chip" data-port="9000">9000</button>
+            <button type="button" class="port-chip" data-port="5000">5000</button>
+          </div>
+
+          <!-- Port action buttons -->
+          <div style="display: flex; gap: 10px; flex-wrap: wrap;">
+            <button type="button" id="btnApplyRestartPort" class="btn-primary" style="display: flex; align-items: center; gap: 6px; font-weight: 600;">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>
+              Apply & Restart on New Port
+            </button>
+            <button type="button" id="btnSavePortConfig" class="btn-secondary" style="display: flex; align-items: center; gap: 6px;">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"></path><polyline points="17 21 17 13 7 13 7 21"></polyline><polyline points="7 3 7 8 15 8"></polyline></svg>
+              Save for Next Launch
+            </button>
+          </div>
+        </div>
+
+        <!-- Launch & Browser Preferences -->
+        <div class="settings-section">
+          <div class="settings-section-title">
+            <span>🚀 Launch & Browser Preferences</span>
+          </div>
+          <label class="settings-checkbox-wrap" style="margin-top: 10px;">
+            <input type="checkbox" id="chkAutoOpenBrowser" checked>
+            <span>Automatically open default browser when starting dashboard</span>
+          </label>
+        </div>
+
+        <!-- Server Environment & Diagnostics -->
+        <div class="settings-section">
+          <div class="settings-section-title">
+            <span>🛡️ Server Environment & Diagnostics</span>
+          </div>
+          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 8px; font-size: 0.8rem;">
+            <div class="setting-info-card">
+              <span class="setting-info-label">Host Bind Interface</span>
+              <span id="settingHostVal" class="setting-info-val mono-text">127.0.0.1</span>
+            </div>
+            <div class="setting-info-card">
+              <span class="setting-info-label">API Security / Key</span>
+              <span id="settingApiKeyVal" class="setting-info-val">Local Single-User</span>
+            </div>
+            <div class="setting-info-card" style="grid-column: span 2;">
+              <span class="setting-info-label">Allowed CORS Origins</span>
+              <span id="settingCorsVal" class="setting-info-val mono-text" style="font-size: 0.72rem;">http://127.0.0.1:7000, http://localhost:7000</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Server Restart Countdown Overlay -->
+  <div id="restartOverlay" class="modal-backdrop" style="display: none; z-index: 9999;">
+    <div class="modal-card" style="max-width: 440px; text-align: center; padding: 32px 24px;">
+      <div style="display: inline-block; position: relative; width: 64px; height: 64px; margin-bottom: 16px;">
+        <div class="loading-ring" style="width: 64px; height: 64px; border-width: 4px; border-top-color: var(--accent);"></div>
+      </div>
+      <h2 style="font-size: 1.25rem; font-weight: 700; margin-bottom: 8px;">Restarting Dashboard Server...</h2>
+      <p id="restartOverlayMsg" style="font-size: 0.88rem; color: var(--text-muted); margin-bottom: 16px;">
+        Switching to port <strong id="restartNewPort" class="mono-text" style="color: var(--accent);">7050</strong>...
+      </p>
+      <div style="font-size: 0.82rem; color: var(--text-muted); font-family: monospace; background: var(--bg-hover); padding: 8px 12px; border-radius: 6px;">
+        Redirecting to <span id="restartTargetUrl" style="color: var(--accent); font-weight: 700;">http://127.0.0.1:7050</span> in <span id="restartCountdown">3</span>s
       </div>
     </div>
   </div>

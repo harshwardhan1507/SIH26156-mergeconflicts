@@ -103,6 +103,9 @@
     shortcutsModal: document.getElementById("shortcutsModal"),
     closeShortcutsBtn: document.getElementById("closeShortcutsBtn"),
     shortcutsHelpBtn: document.getElementById("shortcutsHelpBtn"),
+    settingsBtn: document.getElementById("settingsBtn"),
+    settingsModal: document.getElementById("settingsModal"),
+    closeSettingsBtn: document.getElementById("closeSettingsBtn"),
 
     // Inspector Details
     inspectEventId: document.getElementById("inspectEventId"),
@@ -1113,15 +1116,15 @@
     if (badgeDB) badgeDB.textContent = dbConns.length;
     if (badgeRemote) badgeRemote.textContent = remoteConns.length;
 
-    if (lastScanEl) {
-      if (stats.last_scan_time) {
-        lastScanEl.textContent = formatTimestamp(stats.last_scan_time);
-      } else if (conns.length > 0) {
-        lastScanEl.textContent = "Live Stream (<5ms)";
-      } else {
-        lastScanEl.textContent = "--";
-      }
+    const clientFetchTime = Date.now();
+    if (stats.last_scan_time) {
+      state.lastScanDate = new Date(stats.last_scan_time);
+      state.lastScanClientAnchor = clientFetchTime;
+    } else if (conns.length > 0 && !state.lastScanDate) {
+      state.lastScanDate = new Date();
+      state.lastScanClientAnchor = clientFetchTime;
     }
+    updateLastScanTicker();
 
     // Update control button and alert banner
     updateLiveMonitorControls(stats);
@@ -1129,6 +1132,72 @@
     // If active tab is connections, re-render table
     if (state.activeTab === "connections") {
       renderConnectionsTable();
+    }
+  }
+
+  function updateLastScanTicker() {
+    const lastScanEl = document.getElementById("connStatLastScan");
+    if (!lastScanEl) return;
+
+    if (!state.lastScanDate) {
+      if (state.connections && state.connections.length > 0) {
+        lastScanEl.innerHTML = `<span style="color:var(--color-success); font-weight:600; font-size:0.88rem;">Live Stream (&lt;5ms)</span>`;
+      } else {
+        lastScanEl.textContent = "--";
+      }
+      return;
+    }
+
+    const now = Date.now();
+    // Anchor scan time to client clock to completely eliminate cross-machine clock drift jitter
+    const anchor = state.lastScanClientAnchor || state.lastScanDate.getTime();
+    const diffMs = Math.max(0, now - anchor);
+    const diffSec = Math.floor(diffMs / 1000);
+    const timeStr = formatTimestamp(state.lastScanDate);
+
+    let ageBadgeText = "";
+    let ageColor = "#10b981";
+    let ageBg = "rgba(16, 185, 129, 0.15)";
+    let ageBorder = "rgba(16, 185, 129, 0.35)";
+
+    if (diffSec <= 0) {
+      ageBadgeText = "Just now";
+    } else if (diffSec < 60) {
+      ageBadgeText = `${diffSec}s ago`;
+    } else {
+      const mins = Math.floor(diffSec / 60);
+      const secs = diffSec % 60;
+      ageBadgeText = `${mins}m ${secs}s ago`;
+      ageColor = "#f59e0b";
+      ageBg = "rgba(245, 158, 11, 0.15)";
+      ageBorder = "rgba(245, 158, 11, 0.35)";
+    }
+
+    let timeSpan = lastScanEl.querySelector(".last-scan-timestamp");
+    let badgeSpan = lastScanEl.querySelector(".last-scan-badge");
+    let pulseDot = lastScanEl.querySelector(".pulse-dot");
+
+    if (timeSpan && badgeSpan && pulseDot) {
+      if (timeSpan.textContent !== timeStr) timeSpan.textContent = timeStr;
+      if (badgeSpan.textContent !== ageBadgeText) {
+        badgeSpan.textContent = ageBadgeText;
+        badgeSpan.style.color = ageColor;
+        badgeSpan.style.background = ageBg;
+        badgeSpan.style.borderColor = ageBorder;
+        pulseDot.style.background = ageColor;
+      }
+    } else {
+      lastScanEl.innerHTML = `
+        <div style="display:flex; flex-direction:column; gap:2px;">
+          <span class="mono-text last-scan-timestamp" style="font-size:0.86rem; color:var(--text-primary); font-weight:700; line-height:1.2;">${escapeHtml(timeStr)}</span>
+          <div style="display:inline-flex; align-items:center; gap:5px; margin-top:2px;">
+            <span class="pulse-dot" style="width:6px; height:6px; background:${ageColor};"></span>
+            <span class="last-scan-badge" style="display:inline-flex; align-items:center; padding:1px 7px; border-radius:9999px; font-size:0.72rem; font-family:var(--font-mono); font-weight:700; background:${ageBg}; border:1px solid ${ageBorder}; color:${ageColor};">
+              ${ageBadgeText}
+            </span>
+          </div>
+        </div>
+      `;
     }
   }
 
@@ -1175,19 +1244,19 @@
     }
   }
 
-  async function fetchConnections() {
+  async function fetchConnections(quiet = false) {
     const refreshBtn = document.getElementById("btnRefreshConnections");
-    if (refreshBtn) refreshBtn.classList.add("spinning");
+    if (refreshBtn && !quiet) refreshBtn.classList.add("spinning");
     try {
       const res = await fetch("/api/live-monitor/connections");
       if (!res.ok) return;
       const data = await res.json();
       handleConnectionUpdate(data);
-      showToast("Refreshed socket snapshot", "success");
+      if (!quiet) showToast("Refreshed socket snapshot", "success");
     } catch (e) {
       console.warn("fetchConnections error:", e);
     } finally {
-      if (refreshBtn) {
+      if (refreshBtn && !quiet) {
         setTimeout(() => refreshBtn.classList.remove("spinning"), 500);
       }
     }
@@ -1364,7 +1433,7 @@
     }
 
     if (refreshBtn) {
-      refreshBtn.addEventListener("click", () => fetchConnections());
+      refreshBtn.addEventListener("click", () => fetchConnections(false));
     }
 
     if (copyListBtn) {
@@ -1401,6 +1470,13 @@
         }, 120)
       );
     }
+
+    // High-frequency 1s refresh ticker when live monitor is running to prevent any lag
+    setInterval(() => {
+      if (state.activeTab === "connections" && state.liveMonitorRunning) {
+        fetchConnections(true);
+      }
+    }, 1000);
   }
 
   // --------------------------------------------------------------------------
@@ -1433,54 +1509,120 @@
     const dlqEl = document.getElementById("srcStatDLQ");
     const tbody = document.getElementById("sourcesTableBody");
 
-    if (activeEl) activeEl.textContent = `${metrics.active_sources || 0} / ${metrics.total_sources_registered || 0}`;
-    if (epsEl) epsEl.textContent = `${(metrics.total_events || 0).toLocaleString()} events`;
-    if (valEl) valEl.textContent = `${metrics.validity_rate_pct || 100}%`;
-    if (dlqEl) dlqEl.textContent = (metrics.total_dead_letter || 0).toLocaleString();
+    const badgeAll = document.getElementById("badgeSourceAllCount");
+    const badgeDecl = document.getElementById("badgeSourceDeclarativeCount");
+    const badgeBuiltin = document.getElementById("badgeSourceBuiltinCount");
+
+    const allSources = sources || [];
+    const declSources = allSources.filter((s) => s.source_type === "declarative");
+    const builtSources = allSources.filter((s) => s.source_type !== "declarative");
+
+    if (badgeAll) badgeAll.textContent = allSources.length;
+    if (badgeDecl) badgeDecl.textContent = declSources.length;
+    if (badgeBuiltin) badgeBuiltin.textContent = builtSources.length;
+
+    const totalActive = metrics?.active_sources ?? allSources.filter((s) => s.enabled === 1).length;
+    const totalRegistered = metrics?.total_sources_registered ?? allSources.length;
+
+    if (activeEl) activeEl.textContent = `${totalActive} / ${totalRegistered}`;
+    if (epsEl) epsEl.textContent = `${(metrics?.total_events || 0).toLocaleString()} events`;
+    if (valEl) valEl.textContent = `${metrics?.validity_rate_pct ?? 100}%`;
+    if (dlqEl) dlqEl.textContent = (metrics?.total_dead_letter || 0).toLocaleString();
 
     if (!tbody) return;
-    if (!sources || sources.length === 0) {
+
+    if (allSources.length === 0) {
       tbody.innerHTML = `<tr><td colspan="7" class="host-empty">No log sources registered yet.</td></tr>`;
       return;
     }
 
-    tbody.innerHTML = sources
+    // Filter by category chip & search input
+    state.sourceFilters = state.sourceFilters || { filter: "all", search: "" };
+    const curFilter = state.sourceFilters.filter || "all";
+    const curSearch = (state.sourceFilters.search || "").toLowerCase().trim();
+
+    const filtered = allSources.filter((s) => {
+      if (curFilter === "declarative") {
+        if (s.source_type !== "declarative") return false;
+      } else if (curFilter === "builtin") {
+        if (s.source_type === "declarative") return false;
+      } else if (curFilter === "healthy") {
+        if (s.health_state === "error" || s.health_state === "warning" || (s.dead_letter_count && s.dead_letter_count > 0)) return false;
+      } else if (curFilter === "issues") {
+        if (s.health_state !== "error" && s.health_state !== "warning" && (!s.dead_letter_count || s.dead_letter_count === 0)) return false;
+      }
+
+      if (curSearch) {
+        const hay = `${s.name || ''} ${s.source_id || ''} ${s.vendor || ''} ${s.product || ''} ${s.input_type || ''} ${s.log_format || ''}`.toLowerCase();
+        if (!hay.includes(curSearch)) return false;
+      }
+      return true;
+    });
+
+    if (filtered.length === 0) {
+      tbody.innerHTML = `
+        <tr><td colspan="7" class="host-empty">
+          <div style="display:flex; flex-direction:column; align-items:center; gap:8px; padding:24px 0;">
+            <div style="font-size:1.8rem;">🔍</div>
+            <div style="font-weight:600; color:var(--text-primary);">No log sources match current filters</div>
+            <div style="font-size:0.8rem; color:var(--text-muted);">Try adjusting your search query or switching category chips above.</div>
+          </div>
+        </td></tr>
+      `;
+      return;
+    }
+
+    tbody.innerHTML = filtered
       .map((s) => {
         const isEnabled = s.enabled === 1;
+        const isDecl = s.source_type === "declarative";
+        const icon = isDecl ? "⚡" : "🔌";
+
         const statusBadge = isEnabled
-          ? `<span class="badge badge-allow">ACTIVE</span>`
-          : `<span class="badge badge-subtle">DISABLED</span>`;
-        
-        let healthBadge = `<span class="badge badge-allow">● Healthy</span>`;
-        if (s.health_state === "warning" || s.dead_letter_count > 0) {
-          healthBadge = `<span class="badge badge-cat-threat" style="background: rgba(245, 158, 11, 0.15); color: #f59e0b;">● Warning (${s.dead_letter_count} DLQ)</span>`;
+          ? `<span class="badge badge-allow" style="font-size:0.72rem; font-weight:700; letter-spacing:0.04em;">ACTIVE</span>`
+          : `<span class="badge badge-subtle" style="font-size:0.72rem; font-weight:600; letter-spacing:0.04em;">DISABLED</span>`;
+
+        let healthBadge = `<span class="badge badge-allow" style="display:inline-flex; align-items:center; gap:6px; font-size:0.74rem;"><span class="pulse-dot" style="width:6px; height:6px; background:#10b981;"></span> Healthy</span>`;
+        if (s.health_state === "warning" || (s.dead_letter_count && s.dead_letter_count > 0)) {
+          healthBadge = `<span class="badge badge-cat-threat" style="background:rgba(245,158,11,0.14); border:1px solid rgba(245,158,11,0.35); color:#f59e0b; display:inline-flex; align-items:center; gap:6px; font-size:0.74rem;"><span class="pulse-dot" style="width:6px; height:6px; background:#f59e0b;"></span> Warning (${s.dead_letter_count} DLQ)</span>`;
         } else if (s.health_state === "error") {
-          healthBadge = `<span class="badge badge-deny">● Error</span>`;
+          healthBadge = `<span class="badge badge-deny" style="display:inline-flex; align-items:center; gap:6px; font-size:0.74rem;"><span class="pulse-dot" style="width:6px; height:6px; background:#ef4444;"></span> Error</span>`;
         }
 
-        const typeBadge = s.source_type === "declarative"
-          ? `<span class="badge badge-cat-system" style="background: rgba(168, 85, 247, 0.15); color: #a855f7;">No-Code (${escapeHtml(s.input_type || "YAML")})</span>`
-          : `<span class="badge badge-subtle">Built-in (${escapeHtml(s.input_type || "plugin")})</span>`;
+        const typeBadge = isDecl
+          ? `<span class="badge-source-type-decl">⚡ No-Code (${escapeHtml(s.input_type || "YAML")})</span>`
+          : `<span class="badge-source-type-built">🔌 Built-in (${escapeHtml(s.input_type || "plugin")})</span>`;
 
         const lastEvent = s.last_event_at ? formatTimestamp(s.last_event_at) : "Never";
 
         return `
           <tr>
             <td>
-              <strong style="color: var(--text-primary); font-size: 0.9rem;">${escapeHtml(s.name || s.source_id)}</strong>
-              <div style="font-size: 0.75rem; color: var(--text-muted);">${escapeHtml(s.vendor || "")} / ${escapeHtml(s.product || "")}</div>
+              <div class="source-item-title">
+                <span style="font-size:1rem;">${icon}</span>
+                <span>${escapeHtml(s.name || s.source_id)}</span>
+              </div>
+              <div class="source-item-meta">
+                <span>${escapeHtml(s.vendor || "Generic")}</span>
+                <span>/</span>
+                <span>${escapeHtml(s.product || s.log_format || "Producer")}</span>
+              </div>
             </td>
             <td>${typeBadge}</td>
             <td>${healthBadge}</td>
-            <td class="mono-text" style="font-weight: 600;">${(s.events_processed || 0).toLocaleString()}</td>
-            <td>${statusBadge}</td>
-            <td class="mono-text" style="font-size: 0.75rem; color: var(--text-muted);">${lastEvent}</td>
             <td>
-              <div style="display: flex; gap: 6px;">
-                <button class="pagination-btn btn-toggle-src" data-id="${escapeHtml(s.source_id)}" data-enabled="${isEnabled ? '1' : '0'}" style="padding: 2px 8px; font-size: 0.75rem;">
+              <span class="mono-text" style="font-weight:700; font-size:0.86rem; color:var(--text-primary);">${(s.events_processed || 0).toLocaleString()}</span>
+            </td>
+            <td>${statusBadge}</td>
+            <td>
+              <span class="mono-text" style="font-size:0.76rem; color:var(--text-secondary);">${lastEvent}</span>
+            </td>
+            <td style="text-align:center;">
+              <div style="display:inline-flex; gap:6px; align-items:center; justify-content:center;">
+                <button class="btn-src-toggle btn-toggle-src" data-id="${escapeHtml(s.source_id)}" data-enabled="${isEnabled ? '1' : '0'}" title="${isEnabled ? 'Disable' : 'Enable'} source">
                   ${isEnabled ? 'Disable' : 'Enable'}
                 </button>
-                ${s.source_type === 'declarative' ? `<button class="pagination-btn btn-del-src" data-id="${escapeHtml(s.source_id)}" style="padding: 2px 8px; font-size: 0.75rem; color: var(--color-danger);">Delete</button>` : ''}
+                ${isDecl ? `<button class="btn-src-del btn-del-src" data-id="${escapeHtml(s.source_id)}" title="Delete declarative source definition">Delete</button>` : ''}
               </div>
             </td>
           </tr>
@@ -1488,26 +1630,85 @@
       })
       .join("");
 
-    // Attach action listeners
+    // Wire up actions
     tbody.querySelectorAll(".btn-toggle-src").forEach((btn) => {
       btn.addEventListener("click", async () => {
         const sId = btn.getAttribute("data-id");
         const isEn = btn.getAttribute("data-enabled") === "1";
         const endpoint = isEn ? `/api/sources/${sId}/disable` : `/api/sources/${sId}/enable`;
-        await fetch(endpoint, { method: "POST" });
-        fetchSources();
+        btn.disabled = true;
+        try {
+          await fetch(endpoint, { method: "POST" });
+          showToast(`Log source ${isEn ? 'disabled' : 'enabled'}`, "success");
+          fetchSources();
+        } catch (e) {
+          showToast("Failed to toggle source", "error");
+        } finally {
+          btn.disabled = false;
+        }
       });
     });
 
     tbody.querySelectorAll(".btn-del-src").forEach((btn) => {
       btn.addEventListener("click", async () => {
         const sId = btn.getAttribute("data-id");
-        if (confirm(`Delete declarative source '${sId}'?`)) {
-          await fetch(`/api/sources/${sId}`, { method: "DELETE" });
-          fetchSources();
+        if (confirm(`Delete declarative source '${sId}'? This will remove its parsing configuration.`)) {
+          btn.disabled = true;
+          try {
+            const res = await fetch(`/api/sources/${sId}`, { method: "DELETE" });
+            if (res.ok) {
+              showToast(`Declarative source '${sId}' deleted`, "success");
+              fetchSources();
+            } else {
+              showToast("Failed to delete source", "error");
+            }
+          } catch (e) {
+            showToast("Delete error: " + e.message, "error");
+          }
         }
       });
     });
+  }
+
+  function setupSourcesPanel() {
+    state.sourceFilters = { filter: "all", search: "" };
+
+    const chips = document.getElementById("sourceFilterChips");
+    const searchInp = document.getElementById("sourceSearchInput");
+    const refreshBtn = document.getElementById("btnRefreshSources");
+
+    if (chips) {
+      chips.querySelectorAll(".conn-chip").forEach((chip) => {
+        chip.addEventListener("click", () => {
+          chips.querySelectorAll(".conn-chip").forEach((c) => c.classList.remove("active"));
+          chip.classList.add("active");
+          state.sourceFilters.filter = chip.getAttribute("data-source-filter") || "all";
+          renderSourcesTable(state.sources, state.sourceMetrics);
+        });
+      });
+    }
+
+    if (searchInp) {
+      searchInp.addEventListener(
+        "input",
+        debounce((e) => {
+          state.sourceFilters.search = e.target.value;
+          renderSourcesTable(state.sources, state.sourceMetrics);
+        }, 120)
+      );
+    }
+
+    if (refreshBtn) {
+      refreshBtn.addEventListener("click", async () => {
+        refreshBtn.classList.add("spinning");
+        try {
+          await fetchSources();
+          showToast("Refreshed log sources telemetry", "success");
+        } finally {
+          setTimeout(() => refreshBtn.classList.remove("spinning"), 500);
+        }
+      });
+    }
   }
 
   function setupOnboardingWizard() {
@@ -1530,18 +1731,77 @@
     const sampleCSV = 'SECURE_PROXY_GW,2024-03-15T10:22:45Z,192.168.1.105,198.51.100.20,443,alice,CONNECT,200,1024,4096,allow';
     const sampleJSON = '{"auth_event_type":"login_failed","account_id":"acc-9921","timestamp":"2024-03-15T10:22:45Z","status":"failure","actor":{"username":"admin","ip":"203.0.113.88"},"policy":{"rule_id":"AUTH_RULE_01"}}';
 
-    if (openBtn && modal) {
-      openBtn.addEventListener("click", () => {
-        if (!sampleArea.value.trim()) sampleArea.value = sampleKV;
-        if (!yamlArea.value.trim()) {
-          yamlArea.value = `name: custom_firewall\nvendor: CustomSec\nproduct: PerimeterGuard\nversion: "1.0.0"\nenabled: true\nlog_format: "custom_fw"\n\nframing:\n  type: line\n\ndetection:\n  contains:\n    - "srcip="\n    - "dstip="\n  contains_mode: all\n\nparser:\n  type: key_value\n  pair_delimiter: " "\n  kv_delimiter: "="\n\nfields:\n  timestamp: devtime\n  types:\n    srcport: port\n    dstport: port\n    bytes_in: int\n    bytes_out: int\n\nnormalize:\n  source.vendor: CustomSec\n  source.product: PerimeterGuard\n  source.device_hostname: hostname\n  event.category: network\n  event.action: action\n  event.outcome: action\n  event.severity_numeric: 5.0\n  network.src_ip: srcip\n  network.dst_ip: dstip\n  network.src_port: srcport\n  network.dst_port: dstport\n  network.protocol: proto\n  identity.username: user\n  retain_unmapped: true`;
-        }
+    const defaultYaml = `name: custom_firewall
+vendor: CustomSec
+product: PerimeterGuard
+version: "1.0.0"
+enabled: true
+log_format: "custom_fw"
+
+framing:
+  type: line
+
+detection:
+  contains:
+    - "srcip="
+    - "dstip="
+  contains_mode: all
+
+parser:
+  type: key_value
+  pair_delimiter: " "
+  kv_delimiter: "="
+
+fields:
+  timestamp: devtime
+  types:
+    srcport: port
+    dstport: port
+    bytes_in: int
+    bytes_out: int
+
+normalize:
+  source.vendor: CustomSec
+  source.product: PerimeterGuard
+  source.device_hostname: hostname
+  event.category: network
+  event.action: action
+  event.outcome: action
+  event.severity_numeric: 5.0
+  network.src_ip: srcip
+  network.dst_ip: dstip
+  network.src_port: srcport
+  network.dst_port: dstport
+  network.protocol: proto
+  identity.username: user
+  retain_unmapped: true`;
+
+    function openModal() {
+      if (!sampleArea.value.trim()) sampleArea.value = sampleKV;
+      if (!yamlArea.value.trim()) yamlArea.value = defaultYaml;
+      if (modal) {
         modal.classList.add("open");
-      });
+        modal.classList.add("active");
+        modal.style.display = "flex";
+      }
     }
 
-    if (closeBtn) closeBtn.addEventListener("click", () => modal.classList.remove("open"));
-    if (cancelBtn) cancelBtn.addEventListener("click", () => modal.classList.remove("open"));
+    function closeModal() {
+      if (modal) {
+        modal.classList.remove("open");
+        modal.classList.remove("active");
+        modal.style.display = "";
+      }
+    }
+
+    if (openBtn) openBtn.addEventListener("click", openModal);
+    if (closeBtn) closeBtn.addEventListener("click", closeModal);
+    if (cancelBtn) cancelBtn.addEventListener("click", closeModal);
+    if (modal) {
+      modal.addEventListener("click", (e) => {
+        if (e.target === modal) closeModal();
+      });
+    }
 
     document.getElementById("wizardLoadSampleKVBtn")?.addEventListener("click", () => {
       sampleArea.value = sampleKV;
@@ -1559,7 +1819,7 @@
     if (inferBtn) {
       inferBtn.addEventListener("click", async () => {
         const text = sampleArea.value.trim();
-        if (!text) { alert("Please paste a sample log line first."); return; }
+        if (!text) { showToast("Please paste a sample log line first.", "warning"); return; }
         inferBtn.textContent = "Inferring...";
         try {
           const res = await fetch("/api/sources/infer", {
@@ -1568,12 +1828,14 @@
             body: JSON.stringify({ sample_event: text, name_hint: "custom_source" }),
           });
           const d = await res.json();
-          if (d.draft_config) {
-            // Format into YAML string or JSON
+          if (d.draft_yaml) {
+            yamlArea.value = d.draft_yaml;
+          } else if (d.draft_config) {
             yamlArea.value = JSON.stringify(d.draft_config, null, 2);
           }
+          showToast("Draft configuration auto-inferred!", "success");
         } catch (e) {
-          alert("Inference failed: " + e.message);
+          showToast("Inference failed: " + e.message, "error");
         } finally {
           inferBtn.textContent = "⚡ Auto-Infer Configuration";
         }
@@ -1584,35 +1846,26 @@
       testBtn.addEventListener("click", async () => {
         const sample = sampleArea.value.trim();
         const cfgText = yamlArea.value.trim();
-        if (!sample || !cfgText) { alert("Sample event and configuration are required."); return; }
-
-        let parsedCfg = null;
-        try {
-          parsedCfg = JSON.parse(cfgText);
-        } catch (e) {
-          // If pure YAML, send as config dict or parse basic keys
-          alert("Please verify configuration is formatted properly (valid JSON/YAML).");
-          return;
-        }
+        if (!sample || !cfgText) { showToast("Sample event and configuration are required.", "warning"); return; }
 
         testBtn.textContent = "Testing...";
         try {
           const res = await fetch("/api/sources/test", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ config: parsedCfg, sample_event: sample, tenant_id: "demo_tenant" }),
+            body: JSON.stringify({ config: cfgText, sample_event: sample, tenant_id: "demo_tenant" }),
           });
           const result = await res.json();
           resultsBox.style.display = "block";
           if (result.valid) {
-            statusBadge.innerHTML = `<span class="badge badge-allow" style="font-size: 0.85rem; padding: 4px 10px;">✔ VALIDATION PASSED — Matched Format: ${escapeHtml(result.detected_format)} (Hash: ${result.raw_hash.substring(0, 12)}...)</span>`;
+            statusBadge.innerHTML = `<span class="badge badge-allow" style="font-size:0.84rem; padding:5px 12px; display:inline-flex; align-items:center; gap:6px;">✔ VALIDATION PASSED — Matched Format: <strong>${escapeHtml(result.detected_format)}</strong> (SHA-256: <code>${result.raw_hash.substring(0, 12)}...</code>)</span>`;
           } else {
-            statusBadge.innerHTML = `<span class="badge badge-deny" style="font-size: 0.85rem; padding: 4px 10px;">✖ VALIDATION FAILED: ${(result.errors || []).join("; ")}</span>`;
+            statusBadge.innerHTML = `<span class="badge badge-deny" style="font-size:0.84rem; padding:5px 12px; display:inline-flex; align-items:center; gap:6px;">✖ VALIDATION FAILED: ${(result.errors || []).join("; ")}</span>`;
           }
-          extractedPre.textContent = JSON.stringify(result.extracted_fields, null, 2);
-          normalizedPre.textContent = JSON.stringify(result.normalized_event, null, 2);
+          extractedPre.textContent = JSON.stringify(result.extracted_fields || {}, null, 2);
+          normalizedPre.textContent = JSON.stringify(result.normalized_event || {}, null, 2);
         } catch (e) {
-          alert("Test failed: " + e.message);
+          showToast("Test request failed: " + e.message, "error");
         } finally {
           testBtn.textContent = "▶ Test Mapping Against Sample";
         }
@@ -1622,32 +1875,32 @@
     if (saveBtn) {
       saveBtn.addEventListener("click", async () => {
         const cfgText = yamlArea.value.trim();
-        let parsedCfg = null;
-        try {
-          parsedCfg = JSON.parse(cfgText);
-        } catch (e) {
-          alert("Please ensure configuration is valid JSON/YAML.");
+        if (!cfgText) {
+          showToast("Configuration YAML/JSON is required.", "warning");
           return;
         }
 
+        saveBtn.disabled = true;
+        saveBtn.textContent = "Saving...";
         try {
-          saveBtn.textContent = "Saving...";
           const res = await fetch("/api/sources", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ config: parsedCfg }),
+            body: JSON.stringify({ config: cfgText }),
           });
           const d = await res.json();
           if (res.ok) {
-            alert(`Log Source '${parsedCfg.name}' successfully activated!`);
-            modal.classList.remove("open");
+            showToast(`Log Source successfully activated!`, "success");
+            closeModal();
             fetchSources();
           } else {
-            alert(`Failed to save source: ${JSON.stringify(d.detail)}`);
+            const errDetail = d.detail && d.detail.errors ? d.detail.errors.join(", ") : (d.detail && d.detail.message ? d.detail.message : JSON.stringify(d.detail));
+            showToast(`Failed to save source: ${errDetail}`, "error");
           }
         } catch (e) {
-          alert("Save error: " + e.message);
+          showToast("Save error: " + e.message, "error");
         } finally {
+          saveBtn.disabled = false;
           saveBtn.textContent = "✔ Save & Activate Source";
         }
       });
@@ -1686,7 +1939,11 @@
         }
       } else if (e.key === "Escape") {
         closeInspector();
-        el.shortcutsModal.classList.remove("open");
+        if (el.shortcutsModal) el.shortcutsModal.classList.remove("open");
+        if (el.settingsModal) {
+          el.settingsModal.classList.remove("open");
+          el.settingsModal.classList.remove("active");
+        }
       } else if (e.key === "t" || e.key === "T") {
         toggleColorTheme();
       } else if (e.key === "v" || e.key === "V") {
@@ -1830,20 +2087,263 @@
       });
     }
 
-    // Exports
-    if (el.exportCsvBtn) el.exportCsvBtn.addEventListener("click", () => window.open("/api/export?format=csv", "_blank"));
-    if (el.exportJsonBtn) el.exportJsonBtn.addEventListener("click", () => window.open("/api/export?format=json", "_blank"));
+    // Exports (passes active filters)
+    function buildExportUrl(format) {
+      const p = new URLSearchParams({ format });
+      if (state.filters.search) p.append("search", state.filters.search);
+      if (state.filters.vendor) p.append("vendor", state.filters.vendor);
+      if (state.filters.category) p.append("category", state.filters.category);
+      if (state.filters.action) p.append("action", state.filters.action);
+      if (state.filters.outcome) p.append("outcome", state.filters.outcome);
+      if (state.filters.parserName) p.append("parser_name", state.filters.parserName);
+      return `/api/export?${p.toString()}`;
+    }
+    if (el.exportCsvBtn) el.exportCsvBtn.addEventListener("click", () => window.open(buildExportUrl("csv"), "_blank"));
+    if (el.exportJsonBtn) el.exportJsonBtn.addEventListener("click", () => window.open(buildExportUrl("json"), "_blank"));
+
 
     setupKeyboardShortcuts();
     setupSSE();
     setupConnectionsPanel();
+    setupSourcesPanel();
     setupCrosswalkTabs();
     setupOnboardingWizard();
     setupDensityToolbar();
+    setupSettingsModal();
     window.addEventListener("resize", debounce(() => virtualScroller.render(), 100));
+
+    // Continuous ultra-smooth 250ms live ticker for Last OS Scan elapsed time
+    setInterval(updateLastScanTicker, 250);
 
     // Smooth 0% to 100% startup sequence
     runLoadingSequence();
+  }
+
+  // --------------------------------------------------------------------------
+  // Settings & Server Port Management
+  // --------------------------------------------------------------------------
+  function setupSettingsModal() {
+    const settingsBtn = document.getElementById("settingsBtn");
+    const settingsModal = document.getElementById("settingsModal");
+    const closeSettingsBtn = document.getElementById("closeSettingsBtn");
+    const portInput = document.getElementById("settingPortInput");
+    const currentPortVal = document.getElementById("currentPortVal");
+    const portFeedback = document.getElementById("settingPortFeedback");
+    const hostVal = document.getElementById("settingHostVal");
+    const apiKeyVal = document.getElementById("settingApiKeyVal");
+    const corsVal = document.getElementById("settingCorsVal");
+    const autoOpenChk = document.getElementById("chkAutoOpenBrowser");
+    const btnApplyRestart = document.getElementById("btnApplyRestartPort");
+    const btnSavePort = document.getElementById("btnSavePortConfig");
+    const portChips = document.querySelectorAll(".port-chip");
+
+    const restartOverlay = document.getElementById("restartOverlay");
+    const restartNewPort = document.getElementById("restartNewPort");
+    const restartTargetUrl = document.getElementById("restartTargetUrl");
+    const restartCountdown = document.getElementById("restartCountdown");
+
+    async function loadSettings() {
+      try {
+        const res = await fetch("/api/settings");
+        if (!res.ok) return;
+        const data = await res.json();
+        if (currentPortVal) currentPortVal.textContent = data.current_port || "7000";
+        if (portInput) portInput.value = data.configured_port || data.current_port || 7000;
+        if (hostVal) hostVal.textContent = data.host || "127.0.0.1";
+        if (apiKeyVal) apiKeyVal.textContent = data.api_key_enabled ? "🛡️ Protected (ULPF_API_KEY)" : "🔓 Local Single-User Demo";
+        if (corsVal) corsVal.textContent = (data.cors_origins || []).join(", ");
+        if (autoOpenChk) autoOpenChk.checked = data.auto_open_browser !== false;
+
+        // Highlight matching preset chip
+        portChips.forEach((chip) => {
+          chip.classList.toggle("active", chip.dataset.port === String(portInput.value));
+        });
+      } catch (err) {
+        console.warn("loadSettings error:", err);
+      }
+    }
+
+    function openSettings() {
+      loadSettings();
+      if (settingsModal) {
+        settingsModal.classList.add("open");
+        settingsModal.classList.add("active");
+        settingsModal.style.display = "flex";
+      }
+    }
+
+    function closeSettings() {
+      if (settingsModal) {
+        settingsModal.classList.remove("open");
+        settingsModal.classList.remove("active");
+        settingsModal.style.display = "";
+      }
+    }
+
+    if (settingsBtn) {
+      settingsBtn.addEventListener("click", (e) => {
+        e.preventDefault();
+        openSettings();
+      });
+    }
+
+    if (closeSettingsBtn) {
+      closeSettingsBtn.addEventListener("click", (e) => {
+        e.preventDefault();
+        closeSettings();
+      });
+    }
+
+    if (settingsModal) {
+      settingsModal.addEventListener("click", (e) => {
+        if (e.target === settingsModal) {
+          closeSettings();
+        }
+      });
+    }
+
+    // Keyboard shortcut (,) to open settings
+    document.addEventListener("keydown", (e) => {
+      if (e.key === "," && !e.target.matches("input, textarea, select")) {
+        e.preventDefault();
+        openSettings();
+      }
+    });
+
+    // Preset port chips
+    portChips.forEach((chip) => {
+      chip.addEventListener("click", () => {
+        if (portInput) {
+          portInput.value = chip.dataset.port;
+          portChips.forEach((c) => c.classList.remove("active"));
+          chip.classList.add("active");
+          const val = parseInt(portInput.value, 10);
+          if (portFeedback) {
+            portFeedback.textContent = "✓ Valid TCP Port";
+            portFeedback.style.color = "var(--color-success)";
+          }
+          if (btnApplyRestart) btnApplyRestart.disabled = false;
+          if (btnSavePort) btnSavePort.disabled = false;
+        }
+      });
+    });
+
+    if (portInput) {
+      portInput.addEventListener("input", () => {
+        const val = parseInt(portInput.value, 10);
+        if (isNaN(val) || val < 1024 || val > 65535) {
+          if (portFeedback) {
+            portFeedback.textContent = "❌ Invalid port: must be between 1024 and 65535";
+            portFeedback.style.color = "var(--color-danger)";
+          }
+          if (btnApplyRestart) btnApplyRestart.disabled = true;
+          if (btnSavePort) btnSavePort.disabled = true;
+        } else {
+          if (portFeedback) {
+            portFeedback.textContent = "✓ Valid TCP Port";
+            portFeedback.style.color = "var(--color-success)";
+          }
+          if (btnApplyRestart) btnApplyRestart.disabled = false;
+          if (btnSavePort) btnSavePort.disabled = false;
+          portChips.forEach((c) => c.classList.toggle("active", c.dataset.port === String(val)));
+        }
+      });
+    }
+
+    // Save for Next Launch
+    if (btnSavePort) {
+      btnSavePort.addEventListener("click", async () => {
+        const portVal = parseInt(portInput.value, 10);
+        if (isNaN(portVal) || portVal < 1024 || portVal > 65535) {
+          showToast("Please enter a valid port between 1024 and 65535", "error");
+          return;
+        }
+        btnSavePort.disabled = true;
+        btnSavePort.textContent = "Saving...";
+        try {
+          const res = await fetch("/api/settings/port", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              port: portVal,
+              restart: false,
+              auto_open_browser: autoOpenChk ? autoOpenChk.checked : true,
+            }),
+          });
+          const data = await res.json();
+          if (res.ok) {
+            showToast(`✓ Port ${portVal} saved as default for next launch!`);
+            closeSettings();
+          } else {
+            showToast(data.detail || "Failed to save port", "error");
+          }
+        } catch (err) {
+          showToast("Error saving port: " + err.message, "error");
+        } finally {
+          btnSavePort.disabled = false;
+          btnSavePort.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"></path><polyline points="17 21 17 13 7 13 7 21"></polyline><polyline points="7 3 7 8 15 8"></polyline></svg> Save for Next Launch`;
+        }
+      });
+    }
+
+    // Apply & Restart on New Port
+    if (btnApplyRestart) {
+      btnApplyRestart.addEventListener("click", async () => {
+        const portVal = parseInt(portInput.value, 10);
+        if (isNaN(portVal) || portVal < 1024 || portVal > 65535) {
+          showToast("Please enter a valid port between 1024 and 65535", "error");
+          return;
+        }
+        btnApplyRestart.disabled = true;
+        btnApplyRestart.textContent = "Restarting...";
+        try {
+          const res = await fetch("/api/settings/port", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              port: portVal,
+              restart: true,
+              auto_open_browser: autoOpenChk ? autoOpenChk.checked : true,
+            }),
+          });
+          const data = await res.json();
+          if (res.ok) {
+            closeSettings();
+            if (data.status === "restarting") {
+              // Show restart countdown overlay
+              if (restartNewPort) restartNewPort.textContent = data.new_port;
+              if (restartTargetUrl) restartTargetUrl.textContent = data.redirect_url;
+              if (restartOverlay) {
+                restartOverlay.classList.add("open");
+                restartOverlay.classList.add("active");
+                restartOverlay.style.display = "flex";
+              }
+
+              let countdown = 3;
+              if (restartCountdown) restartCountdown.textContent = countdown;
+              const timer = setInterval(() => {
+                countdown -= 1;
+                if (restartCountdown) restartCountdown.textContent = countdown;
+                if (countdown <= 0) {
+                  clearInterval(timer);
+                  window.location.href = data.redirect_url;
+                }
+              }, 1000);
+            } else {
+              showToast(data.message || `Configured port: ${portVal}`);
+            }
+          } else {
+            showToast(data.detail || "Restart failed", "error");
+            btnApplyRestart.disabled = false;
+            btnApplyRestart.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg> Apply & Restart on New Port`;
+          }
+        } catch (err) {
+          showToast("Restart request error: " + err.message, "error");
+          btnApplyRestart.disabled = false;
+          btnApplyRestart.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg> Apply & Restart on New Port`;
+        }
+      });
+    }
   }
 
   // --------------------------------------------------------------------------

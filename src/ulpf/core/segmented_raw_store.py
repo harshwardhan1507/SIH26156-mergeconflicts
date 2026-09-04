@@ -69,7 +69,10 @@ def _lock_exclusive(fh: BinaryIO) -> None:
     if _HAVE_FCNTL:
         fcntl.flock(fh.fileno(), fcntl.LOCK_EX)
     elif _HAVE_MSVCRT:
+        cur = fh.tell()
+        fh.seek(0)
         msvcrt.locking(fh.fileno(), msvcrt.LK_LOCK, 1)  # type: ignore[attr-defined]
+        fh.seek(cur)
 
 
 def _unlock(fh: BinaryIO) -> None:
@@ -78,7 +81,10 @@ def _unlock(fh: BinaryIO) -> None:
         fcntl.flock(fh.fileno(), fcntl.LOCK_UN)
     elif _HAVE_MSVCRT:
         try:
+            cur = fh.tell()
+            fh.seek(0)
             msvcrt.locking(fh.fileno(), msvcrt.LK_UNLCK, 1)  # type: ignore[attr-defined]
+            fh.seek(cur)
         except OSError:
             pass
 
