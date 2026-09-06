@@ -190,13 +190,28 @@ ulpf lookup --event-id d0f0b096-9b96-43ff-ac78-e4bce3caa108
 ### Launch Web Dashboard
 
 ```bash
-ulpf dashboard --port 8000 --output-dir output/
-# Navigate to http://127.0.0.1:8000
+# Default port is 7000:
+ulpf dashboard --output-dir output/
+# Navigate to http://127.0.0.1:7000
+
+# Put any custom port of your choice (e.g., 3000, 5000, 8000, 8080, 9000):
+ulpf dashboard --port 8080 --output-dir output/
+# Navigate to http://127.0.0.1:8080
+
+# Or with the dedicated dashboard runner using the -p short flag:
+ulpf-dashboard -p 8080 --output-dir output/
 
 # Require an API key on write endpoints (ingest/reindex/live-monitor) and
 # restrict CORS to a specific origin, e.g. when exposing beyond localhost:
-ULPF_API_KEY=change-me ULPF_CORS_ORIGINS=http://localhost:8000 ulpf dashboard --port 8000
+ULPF_API_KEY=change-me ULPF_CORS_ORIGINS=http://localhost:8080 ulpf dashboard --port 8080
 ```
+
+#### Custom Port Selection & Configuration
+
+The port is completely up to you! You can put and run the dashboard on any custom port of your choice:
+- **CLI Flag (`--port` / `-p`)**: Run with any custom port you want by passing `--port <PORT>` or `-p <PORT>` (for example: `ulpf dashboard --port 8080`, `ulpf-dashboard -p 3000`, or `ulpf dashboard --port 9000`).
+- **Web UI Settings Modal**: In the dashboard interface, open the **Settings** modal, enter any custom port, and click save. It automatically persists your custom port preference to `dashboard_config.json` via `/api/settings` across restarts.
+- **Automatic Conflict Detection & Fallback**: If the custom port you selected is already occupied by another application or service on your system, ULPF will automatically scan and bind to the next available free port so the dashboard always starts smoothly without crashing.
 
 By default (no `ULPF_API_KEY` set) the dashboard is a trusted single-user
 local tool — CORS is still restricted to its own origin (never a wildcard),

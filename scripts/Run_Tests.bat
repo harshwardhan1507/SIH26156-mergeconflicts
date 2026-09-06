@@ -2,8 +2,8 @@
 setlocal enabledelayedexpansion
 title ULPF Master Test Runner (VPN, Cloud, MySQL, Windows, OS)
 
-:: Change to current directory
-cd /d "%~dp0"
+:: Change to root directory
+cd /d "%~dp0\.."
 
 echo ===============================================================================
 echo   UNIVERSAL LOG PRE-PROCESSING FRAMEWORK (ULPF)
@@ -52,7 +52,7 @@ echo [INFO] Running full end-to-end audit (VPN, Cloud, MySQL, OS, Sockets, Pytes
 echo.
 
 :: Execute Master Test Suite
-!PYTHON_EXE! test_all.py
+!PYTHON_EXE! tests/system_verification.py
 
 echo.
 echo ===============================================================================

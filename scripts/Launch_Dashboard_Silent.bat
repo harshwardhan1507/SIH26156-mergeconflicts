@@ -1,6 +1,6 @@
 @echo off
 setlocal enabledelayedexpansion
-cd /d "%~dp0"
+cd /d "%~dp0\.."
 
 :: Detect Python executable
 set "PYTHON_EXE="
@@ -21,5 +21,5 @@ if not defined PYTHON_EXE (
 )
 
 if defined PYTHON_EXE (
-    !PYTHON_EXE! -m ulpf.cli dashboard --background --port 8000 --output-dir output
+    !PYTHON_EXE! -m ulpf.cli dashboard --background --output-dir output
 )

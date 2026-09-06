@@ -2,7 +2,7 @@
 setlocal enabledelayedexpansion
 title Stop ULPF Dashboard
 color 0C
-cd /d "%~dp0"
+cd /d "%~dp0\.."
 cls
 echo ======================================================================
 echo           Universal Log Pre-processing Framework (ULPF)
@@ -34,7 +34,7 @@ if defined PYTHON_EXE (
 )
 
 :: Direct PowerShell fallback
-powershell -NoProfile -ExecutionPolicy Bypass -Command "Get-NetTCPConnection -LocalPort 8000 -ErrorAction SilentlyContinue | ForEach-Object { Stop-Process -Id $_.OwningProcess -Force -ErrorAction SilentlyContinue }; Write-Host '[+] Server on port 8000 stopped.' -ForegroundColor Green"
+powershell -NoProfile -ExecutionPolicy Bypass -Command "Get-NetTCPConnection -LocalPort 7000,8000 -ErrorAction SilentlyContinue | ForEach-Object { Stop-Process -Id $_.OwningProcess -Force -ErrorAction SilentlyContinue }; Write-Host '[+] Server stopped.' -ForegroundColor Green"
 
 :done
 echo.

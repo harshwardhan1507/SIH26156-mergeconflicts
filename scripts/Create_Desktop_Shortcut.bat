@@ -11,23 +11,25 @@ echo.
 powershell -NoProfile -ExecutionPolicy Bypass -Command "
 $ws = New-Object -ComObject WScript.Shell;
 $desktop = [System.Environment]::GetFolderPath('Desktop');
-$root = (Get-Location).Path;
+$scriptsDir = (Get-Location).Path;
+$projectRoot = (Resolve-Path (Join-Path $scriptsDir '..')).Path;
 
 # 1. Start Dashboard Shortcut
 $startLink = $ws.CreateShortcut([System.IO.Path]::Combine($desktop, 'ULPF Dashboard.lnk'));
-$startLink.TargetPath = [System.IO.Path]::Combine($root, 'Start_Dashboard_Background.vbs');
-$startLink.WorkingDirectory = $root;
+$startLink.TargetPath = [System.IO.Path]::Combine($scriptsDir, 'Start_Dashboard_Background.vbs');
+$startLink.WorkingDirectory = $projectRoot;
 $startLink.Description = 'Universal Log Pre-processing Framework Dashboard (1-Click Background)';
-if (Test-Path ([System.IO.Path]::Combine($root, 'packaging\windows\ulpf_icon.ico'))) {
-    $startLink.IconLocation = [System.IO.Path]::Combine($root, 'packaging\windows\ulpf_icon.ico');
+$iconPath = [System.IO.Path]::Combine($projectRoot, 'tools\windows\ulpf_icon.ico');
+if (Test-Path $iconPath) {
+    $startLink.IconLocation = $iconPath;
 }
 $startLink.Save();
 Write-Host '[SUCCESS] Created Desktop Shortcut: ULPF Dashboard.lnk' -ForegroundColor Green;
 
 # 2. Stop Dashboard Shortcut
 $stopLink = $ws.CreateShortcut([System.IO.Path]::Combine($desktop, 'Stop ULPF Dashboard.lnk'));
-$stopLink.TargetPath = [System.IO.Path]::Combine($root, 'Stop_Dashboard.bat');
-$stopLink.WorkingDirectory = $root;
+$stopLink.TargetPath = [System.IO.Path]::Combine($scriptsDir, 'Stop_Dashboard.bat');
+$stopLink.WorkingDirectory = $projectRoot;
 $stopLink.Description = 'Stop running ULPF Dashboard Background Server';
 $stopLink.Save();
 Write-Host '[SUCCESS] Created Desktop Shortcut: Stop ULPF Dashboard.lnk' -ForegroundColor Green;
