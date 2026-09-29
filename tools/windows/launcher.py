@@ -43,9 +43,8 @@ if sys.platform == "win32":
 
 # Ensure all parsers are auto-registered
 import ulpf.parsers  # noqa: F401
-from ulpf.dashboard.app import create_app, _resolve_output_dir
-from ulpf.core.ingestion import FileReader
-from ulpf.cli import _build_pipeline, _find_schema_dir, _find_config_dir
+from ulpf_dashboard.app import create_app
+from ulpf_dashboard.paths import resolve_output_dir as _resolve_output_dir
 import uvicorn
 
 
@@ -73,50 +72,12 @@ def find_available_port(host: str = "127.0.0.1", start_port: int = 8000) -> int:
 
 def find_sample_logs_dir() -> Path | None:
     """Locate sample_logs directory in various packaging/source layouts."""
-    candidates = [
-        Path.cwd() / "sample_logs",
-        Path.cwd() / "ulpf" / "sample_logs",
-        Path(__file__).parent / "sample_logs",
-        Path(__file__).parent / "ulpf" / "sample_logs",
-        Path(__file__).parent.parent / "sample_logs",
-        Path(__file__).parent.parent / "ulpf" / "sample_logs",
-    ]
-    # Check PyInstaller bundle directory
-    if getattr(sys, "frozen", False) and hasattr(sys, "_MEIPASS"):
-        meipass = Path(sys._MEIPASS)
-        candidates.insert(0, meipass / "sample_logs")
-        candidates.insert(0, meipass / "ulpf" / "sample_logs")
-
-    for c in candidates:
-        if c.exists() and c.is_dir() and any(c.iterdir()):
-            return c
     return None
 
 
 def bootstrap_sample_data_if_needed(output_dir: Path) -> None:
-    """Initialize demo events if database is empty on first launch."""
-    try:
-        events_file = output_dir / "events.ndjson"
-        if not events_file.exists() or events_file.stat().st_size == 0:
-            sample_dir = find_sample_logs_dir()
-            if sample_dir and sample_dir.exists():
-                output_dir.mkdir(parents=True, exist_ok=True)
-                p, s, v = _build_pipeline(
-                    output=output_dir,
-                    schema_dir=_find_schema_dir(),
-                    cfg=_find_config_dir() / "sources.yaml",
-                    sink_type="ndjson",
-                    enrich=True,
-                )
-                reader = FileReader(str(sample_dir))
-                p.run(reader)
-                v.close()
-                for snk in s:
-                    snk.close()
-    except Exception as e:
-        log_path = get_user_log_path()
-        with open(log_path, "a", encoding="utf-8") as f:
-            f.write(f"[{time.ctime()}] Bootstrap notice: {e}\n")
+    """No-op: Do not seed demo/sample data so the event grid displays real host data."""
+    return
 
 
 def wait_for_server(host: str, port: int, timeout: float = 10.0) -> bool:
