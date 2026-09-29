@@ -100,7 +100,7 @@ async def update_port_settings(req: PortSettingsRequest, state: State) -> dict[s
                 "--port",
                 str(req.port),
                 "--host",
-                str(host),
+                host,
                 "--output-dir",
                 str(state.output_dir),
                 "--no-open-browser",
