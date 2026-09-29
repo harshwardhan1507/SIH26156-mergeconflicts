@@ -33,7 +33,11 @@ def create_linux_bundle(root_dir: Path, dist_dir: Path) -> Path:
     shutil.copy2(root_dir / "tools" / "linux" / "ulpf.desktop", bundle_dir / "ulpf.desktop")
     shutil.copy2(root_dir / "tools" / "linux" / "install_linux.sh", bundle_dir / "install_linux.sh")
     shutil.copy2(root_dir / "tools" / "linux" / "ulpf-dashboard.service", bundle_dir / "ulpf-dashboard.service")
-    shutil.copy2(root_dir / "start_dashboard.sh", bundle_dir / "launch_dashboard.sh")
+    start_sh = root_dir / "scripts" / "start_dashboard.sh"
+    if not start_sh.exists():
+        start_sh = root_dir / "start_dashboard.sh"
+    if start_sh.exists():
+        shutil.copy2(start_sh, bundle_dir / "launch_dashboard.sh")
 
     # Copy .deb if built
     deb_files = list(dist_dir.glob("ulpf_*.deb"))

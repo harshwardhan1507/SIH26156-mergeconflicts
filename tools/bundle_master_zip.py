@@ -25,6 +25,7 @@ def main():
         "deploy",
         "examples",
         "tools",
+        "scripts",
         ".github",
         "pyproject.toml",
         "requirements.txt",
