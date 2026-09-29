@@ -61,9 +61,9 @@ ulpf = "ulpf.cli:main"
 ulpf-dashboard = "ulpf_dashboard.server:main"
 
 [project.urls]
-Homepage = "https://github.com/NotUrNio/ULPF"
-Documentation = "https://github.com/NotUrNio/ULPF/tree/main/docs"
-Issues = "https://github.com/NotUrNio/ULPF/issues"
+Homepage = "https://github.com/harshwardhan1507/SIH26156-mergeconflicts"
+Documentation = "https://github.com/harshwardhan1507/SIH26156-mergeconflicts/tree/main/docs"
+Issues = "https://github.com/harshwardhan1507/SIH26156-mergeconflicts/issues"
 
 # ---------------------------------------------------------------------------
 # Packaging
