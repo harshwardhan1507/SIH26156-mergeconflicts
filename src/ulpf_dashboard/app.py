@@ -35,9 +35,30 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
     state: AppState = app.state.ulpf
     indexed = state.indexer.sync_from_ndjson()
     logger.info("Initial index sync complete: %d records", indexed)
+
+    if getattr(app.state, "enable_live_monitor", True):
+        try:
+            from ulpf.collectors.live_monitor import LiveSystemMonitor
+            if state.live_monitor is None:
+                state.live_monitor = LiveSystemMonitor(
+                    output_dir=state.output_dir,
+                    interval_ms=500,
+                    write_to_main_pipeline=True,
+                )
+            if not state.live_monitor.is_running():
+                state.live_monitor.start()
+                logger.info("Live Host System Monitor auto-started in main pipeline mode")
+        except Exception as exc:
+            logger.warning("Could not auto-start Live System Monitor: %s", exc)
+
     try:
         yield
     finally:
+        if state.live_monitor is not None and state.live_monitor.is_running():
+            try:
+                state.live_monitor.stop()
+            except Exception as exc:
+                logger.warning("Stopping Live System Monitor failed: %s", exc)
         state.close()
 
 
@@ -45,6 +66,7 @@ def create_app(
     output_dir: str | Path | None = None,
     host: str = "127.0.0.1",
     port: int = 7000,
+    enable_live_monitor: bool = True,
 ) -> FastAPI:
     """
     Build a configured dashboard application.
@@ -54,6 +76,7 @@ def create_app(
             :func:`~ulpf_dashboard.paths.resolve_output_dir`.
         host: Bind address, used for the CORS allowlist and start-up warnings.
         port: Bind port, used for the CORS allowlist.
+        enable_live_monitor: Whether to automatically launch live host monitoring.
     """
     resolved = resolve_output_dir(output_dir)
     ulpf.bootstrap()  # register built-in parsers and declarative sources
@@ -65,6 +88,7 @@ def create_app(
         lifespan=_lifespan,
     )
     app.state.ulpf = AppState(output_dir=resolved, host=host, port=port)
+    app.state.enable_live_monitor = enable_live_monitor
 
     origins = cors_origins(host, port)
     app.add_middleware(

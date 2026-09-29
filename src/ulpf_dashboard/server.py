@@ -227,6 +227,8 @@ def spawn_background(output_dir: Path, host: str, port: int, open_browser: bool)
 @click.option("--port", "-p", default=7000, type=int, help="Bind port.")
 @click.option("--open-browser/--no-open-browser", default=True,
               help="Open the dashboard in the default browser once it is up.")
+@click.option("--live-monitor/--no-live-monitor", default=True,
+              help="Auto-start real-time host process and network telemetry.")
 @click.option("--background", "-b", is_flag=True, help="Run persistently in the background.")
 @click.option("--stop", is_flag=True, help="Stop a running background dashboard.")
 @click.option("--status", is_flag=True, help="Report dashboard server status.")
@@ -237,6 +239,7 @@ def main(
     host: str,
     port: int,
     open_browser: bool,
+    live_monitor: bool,
     background: bool,
     stop: bool,
     status: bool,
@@ -297,7 +300,7 @@ def main(
     write_pid_file(resolved, host, port)
     try:
         uvicorn.run(
-            create_app(output_dir=resolved, host=host, port=port),
+            create_app(output_dir=resolved, host=host, port=port, enable_live_monitor=live_monitor),
             host=host,
             port=port,
             log_level=log_level.lower(),
