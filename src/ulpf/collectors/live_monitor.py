@@ -512,9 +512,11 @@ class LiveSystemMonitor:
                 # for a single line, several times a second. Consumers such as
                 # the dashboard pick the new events up from the NDJSON tail, so
                 # nothing here needs to know they exist.
-                self._pipeline_session().process_event(
+                session = self._pipeline_session()
+                session.process_event(
                     raw_line=raw_line, source_tag=source_tag, ingest_ts=ts
                 )
+                session.flush()
 
         except Exception as exc:
             logger.error(f"Error recording live host event: {exc}")
