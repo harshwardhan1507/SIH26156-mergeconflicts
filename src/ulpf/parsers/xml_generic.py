@@ -56,8 +56,8 @@ _WIN_EVENT_MAP: dict[int, tuple[str, int, str, str]] = {
     4657: ('system', 6, 'registry_modified', 'A registry value was modified'),
     4688: ('system', 4, 'process_start', 'A new process was created'),
     4689: ('system', 3, 'process_stop', 'A process has exited'),
-    4697: ('system', 9, 'service_install', 'A service was installed in the system'),
-    7045: ('system', 9, 'service_install', 'New service installed'),
+    4697: ('system', 4, 'service_install', 'A service was installed in the system'),
+    7045: ('system', 4, 'service_install', 'New service installed'),
     16384: ('system', 4, 'service_spp', 'Software Protection service update'),
     15: ('system', 4, 'security_product_state', 'Security Center state update'),
     # Network
@@ -232,11 +232,17 @@ class XMLGenericParser(BaseParser):
                 fields['event_description'] = f"Process: {fields['process_name']} ({fields['action']})"
             else:
                 fields['event_description'] = desc
-        else:
-            fields['category'] = 'system'
-            fields['severity_numeric'] = 3
-            fields['action'] = fields.get('EventData.Action') or 'system_event'
-            fields['event_description'] = f"Windows Event ID {event_id or 'unknown'}"
+        # Calibrate severity using Windows Event Log 'Level' to eliminate false alarms:
+        # Level 1 = Critical, Level 2 = Error, Level 3 = Warning, Level 4 = Information, Level 5 = Verbose
+        win_level = str(fields.get('Level') or '').strip()
+        if win_level in ('4', '5', '0') and event_id not in (1102, 4649):
+            # Purely informational events (e.g. routine service registrations, driver updates)
+            # are capped at severity 4 (low/informational) to prevent false positives.
+            fields['severity_numeric'] = min(fields['severity_numeric'], 4)
+        elif win_level in ('1', '2'):
+            fields['severity_numeric'] = max(fields['severity_numeric'], 8 if win_level == '1' else 7)
+        elif win_level == '3':
+            fields['severity_numeric'] = max(fields['severity_numeric'], 5)
 
         # Extract common fields from EventData
         fields['src_ip'] = self.validate_ip(

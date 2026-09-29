@@ -117,3 +117,22 @@ def test_ordinary_windows_event_xml_still_parses():
     )
     fields = PARSER.extract(event)
     assert fields["Computer"] == "DC01"
+
+
+def test_windows_event_severity_calibration_prevents_false_alarms():
+    """Informational Level 4 service events (e.g. EventID 7045) must not trigger high severity."""
+    info_service_event = (
+        '<Event xmlns="http://schemas.microsoft.com/win/2004/08/events/event">'
+        "<System><EventID>7045</EventID><Level>4</Level><Computer>PC01</Computer></System>"
+        "<EventData><Data Name='ServiceName'>TestUpdater</Data></EventData></Event>"
+    )
+    fields = PARSER.extract(info_service_event)
+    assert fields["severity_numeric"] <= 4
+
+    # Real critical threat (EventID 1102 - audit log cleared) remains high severity
+    audit_clear_event = (
+        '<Event xmlns="http://schemas.microsoft.com/win/2004/08/events/event">'
+        "<System><EventID>1102</EventID><Level>4</Level><Computer>PC01</Computer></System></Event>"
+    )
+    assert PARSER.extract(audit_clear_event)["severity_numeric"] == 9
+
