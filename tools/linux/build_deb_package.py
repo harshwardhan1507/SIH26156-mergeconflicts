@@ -164,7 +164,7 @@ fi
         tar.addfile(ti, io.BytesIO(dash_runner))
 
         # Desktop entry
-        desk_path = root_dir / "packaging" / "linux" / "ulpf.desktop"
+        desk_path = root_dir / "tools" / "linux" / "ulpf.desktop"
         if desk_path.exists():
             d_bytes = desk_path.read_bytes()
             ti = tarfile.TarInfo("./usr/share/applications/ulpf.desktop")
@@ -174,7 +174,7 @@ fi
             tar.addfile(ti, io.BytesIO(d_bytes))
 
         # Systemd service
-        serv_path = root_dir / "packaging" / "linux" / "ulpf-dashboard.service"
+        serv_path = root_dir / "tools" / "linux" / "ulpf-dashboard.service"
         if serv_path.exists():
             s_bytes = serv_path.read_bytes()
             ti = tarfile.TarInfo("./etc/systemd/system/ulpf-dashboard.service")
@@ -184,7 +184,7 @@ fi
             tar.addfile(ti, io.BytesIO(s_bytes))
 
         # Application icon (PNG)
-        icon_ico = root_dir / "packaging" / "windows" / "ulpf_icon.ico"
+        icon_ico = root_dir / "tools" / "windows" / "ulpf_icon.ico"
         if icon_ico.exists():
             im = Image.open(icon_ico)
             png_buf = io.BytesIO()

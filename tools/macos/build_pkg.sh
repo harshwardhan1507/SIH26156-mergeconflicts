@@ -10,7 +10,7 @@ echo "=== Building ULPF macOS Package v${VERSION} ==="
 
 mkdir -p "${PKG_ROOT}/usr/local/share/ulpf"
 cp dist/ulpf-${VERSION}-py3-none-any.whl "${PKG_ROOT}/usr/local/share/ulpf/"
-cp packaging/macos/install_macos.sh "${PKG_ROOT}/usr/local/share/ulpf/"
+cp tools/macos/install_macos.sh "${PKG_ROOT}/usr/local/share/ulpf/"
 
 if command -v pkgbuild >/dev/null 2>&1; then
     pkgbuild --root "${PKG_ROOT}" \

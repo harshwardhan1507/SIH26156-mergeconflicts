@@ -5,7 +5,7 @@ from PIL import Image, ImageDraw
 import sys
 from pathlib import Path
 
-def create_ulpf_icon(output_path: str = "packaging/windows/ulpf_icon.ico") -> None:
+def create_ulpf_icon(output_path: str = "tools/windows/ulpf_icon.ico") -> None:
     size = 256
     img = Image.new("RGBA", (size, size), (0, 0, 0, 0))
     draw = ImageDraw.Draw(img)
@@ -54,5 +54,5 @@ def create_ulpf_icon(output_path: str = "packaging/windows/ulpf_icon.ico") -> No
     print(f"[+] Multi-resolution Windows icon generated: {out_file.resolve()}")
 
 if __name__ == "__main__":
-    p = sys.argv[1] if len(sys.argv) > 1 else "packaging/windows/ulpf_icon.ico"
+    p = sys.argv[1] if len(sys.argv) > 1 else "tools/windows/ulpf_icon.ico"
     create_ulpf_icon(p)

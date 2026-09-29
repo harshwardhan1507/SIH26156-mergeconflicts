@@ -26,13 +26,13 @@ def create_linux_bundle(root_dir: Path, dist_dir: Path) -> Path:
     bundle_dir.mkdir(parents=True, exist_ok=True)
 
     # 1. Generate PNG icon
-    icon_src = root_dir / "packaging" / "windows" / "ulpf_icon.ico"
+    icon_src = root_dir / "tools" / "windows" / "ulpf_icon.ico"
     generate_linux_png_icons(icon_src, bundle_dir)
 
     # 2. Copy Linux files
-    shutil.copy2(root_dir / "packaging" / "linux" / "ulpf.desktop", bundle_dir / "ulpf.desktop")
-    shutil.copy2(root_dir / "packaging" / "linux" / "install_linux.sh", bundle_dir / "install_linux.sh")
-    shutil.copy2(root_dir / "packaging" / "linux" / "ulpf-dashboard.service", bundle_dir / "ulpf-dashboard.service")
+    shutil.copy2(root_dir / "tools" / "linux" / "ulpf.desktop", bundle_dir / "ulpf.desktop")
+    shutil.copy2(root_dir / "tools" / "linux" / "install_linux.sh", bundle_dir / "install_linux.sh")
+    shutil.copy2(root_dir / "tools" / "linux" / "ulpf-dashboard.service", bundle_dir / "ulpf-dashboard.service")
     shutil.copy2(root_dir / "start_dashboard.sh", bundle_dir / "launch_dashboard.sh")
 
     # Copy .deb if built

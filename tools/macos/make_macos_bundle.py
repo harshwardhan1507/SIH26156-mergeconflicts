@@ -121,7 +121,7 @@ def create_macos_bundle(root_dir: Path, dist_dir: Path) -> Path:
     launcher_file.write_text(MACOS_LAUNCHER_SCRIPT, encoding="utf-8")
 
     # 4. Copy Icons & Resources
-    icon_src = root_dir / "packaging" / "windows" / "ulpf_icon.ico"
+    icon_src = root_dir / "tools" / "windows" / "ulpf_icon.ico"
     if icon_src.exists():
         shutil.copy2(icon_src, resources_dir / "ulpf_icon.ico")
 

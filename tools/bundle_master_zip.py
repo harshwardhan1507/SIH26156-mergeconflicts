@@ -20,11 +20,11 @@ def main():
 
     # 1. Copy source code and config
     items_to_copy = [
-        "ulpf",
+        "src",
         "docs",
-        "docker",
-        "sample_logs",
-        "packaging",
+        "deploy",
+        "examples",
+        "tools",
         ".github",
         "pyproject.toml",
         "requirements.txt",

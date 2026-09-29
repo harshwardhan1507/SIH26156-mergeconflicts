@@ -19,7 +19,7 @@ def build_macos_dmg(root_dir: Path, dist_dir: Path) -> Path:
 
     if not app_dir.exists():
         print(f"[!] ULPF.app bundle not found at {app_dir}. Building bundle first...")
-        from packaging.macos.make_macos_bundle import create_macos_bundle
+        from tools.macos.make_macos_bundle import create_macos_bundle
         create_macos_bundle(root_dir, dist_dir)
 
     iso = pycdlib.PyCdlib()

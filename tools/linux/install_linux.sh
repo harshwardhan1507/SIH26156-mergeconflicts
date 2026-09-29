@@ -23,16 +23,16 @@ fi
 
 # 2. Install Desktop Launcher Icon
 echo "[2/4] Installing application icon..."
-if [ -f "packaging/linux/ulpf_icon.png" ]; then
-    cp "packaging/linux/ulpf_icon.png" "${ICON_DIR}/ulpf.png"
+if [ -f "tools/linux/ulpf_icon.png" ]; then
+    cp "tools/linux/ulpf_icon.png" "${ICON_DIR}/ulpf.png"
 elif [ -f "ulpf_icon.png" ]; then
     cp "ulpf_icon.png" "${ICON_DIR}/ulpf.png"
 fi
 
 # 3. Install .desktop Application Entry
 echo "[3/4] Registering Linux Desktop application entry..."
-if [ -f "packaging/linux/ulpf.desktop" ]; then
-    cp "packaging/linux/ulpf.desktop" "${DESKTOP_DIR}/ulpf.desktop"
+if [ -f "tools/linux/ulpf.desktop" ]; then
+    cp "tools/linux/ulpf.desktop" "${DESKTOP_DIR}/ulpf.desktop"
     chmod +x "${DESKTOP_DIR}/ulpf.desktop"
     if command -v update-desktop-database >/dev/null 2>&1; then
         update-desktop-database "${DESKTOP_DIR}" || true
@@ -43,8 +43,8 @@ fi
 echo "[4/4] Setting up systemd background service..."
 SYSTEMD_USER_DIR="${HOME}/.config/systemd/user"
 mkdir -p "${SYSTEMD_USER_DIR}"
-if [ -f "packaging/linux/ulpf-dashboard.service" ]; then
-    cp "packaging/linux/ulpf-dashboard.service" "${SYSTEMD_USER_DIR}/"
+if [ -f "tools/linux/ulpf-dashboard.service" ]; then
+    cp "tools/linux/ulpf-dashboard.service" "${SYSTEMD_USER_DIR}/"
     if command -v systemctl >/dev/null 2>&1; then
         systemctl --user daemon-reload || true
         echo "  [i] To enable background dashboard: systemctl --user enable --now ulpf-dashboard"

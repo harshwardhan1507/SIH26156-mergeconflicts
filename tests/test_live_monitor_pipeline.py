@@ -1,8 +1,9 @@
 import datetime
 import json
-import time
 from pathlib import Path
+
 from ulpf.collectors.live_monitor import LiveSystemMonitor
+
 
 def test_live_monitor_writes_and_flushes_pipeline(tmp_path: Path):
     monitor = LiveSystemMonitor(

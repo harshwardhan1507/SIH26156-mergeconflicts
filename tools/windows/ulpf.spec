@@ -41,22 +41,22 @@ hiddenimports = [
 ] + collect_submodules("ulpf") + collect_submodules("webview")
 
 datas = [
-    (str(root_dir / "ulpf" / "schemas"), "ulpf/schemas"),
-    (str(root_dir / "ulpf" / "config"), "ulpf/config"),
-    (str(root_dir / "ulpf" / "dashboard" / "static"), "ulpf/dashboard/static"),
-    (str(root_dir / "ulpf" / "sample_logs"), "ulpf/sample_logs"),
+    (str(root_dir / "src" / "ulpf" / "schemas"), "ulpf/schemas"),
+    (str(root_dir / "src" / "ulpf" / "config"), "ulpf/config"),
+    (str(root_dir / "src" / "ulpf_dashboard" / "static"), "ulpf_dashboard/static"),
+    (str(root_dir / "examples" / "sample_logs"), "examples/sample_logs"),
 ]
 
-icon_path = str(root_dir / "packaging" / "windows" / "ulpf_icon.ico")
-if not Path(icon_path).exists():
+icon_path = str(root_dir / "tools" / "windows" / "ulpf_icon.ico")
+if sys.platform != "win32" or not Path(icon_path).exists():
     icon_path = None
 
 # -------------------------------------------------------------
 # Target 1: ulpf.exe (CLI + Interactive Menu)
 # -------------------------------------------------------------
 a_cli = Analysis(
-    [str(root_dir / "ulpf" / "cli.py")],
-    pathex=[str(root_dir)],
+    [str(root_dir / "src" / "ulpf" / "cli.py")],
+    pathex=[str(root_dir), str(root_dir / "src")],
     binaries=[],
     datas=datas,
     hiddenimports=hiddenimports,
@@ -98,8 +98,8 @@ exe_cli = EXE(
 # Target 2: ulpf-dashboard.exe (Dedicated Standalone Web App Backend)
 # -------------------------------------------------------------
 a_dash = Analysis(
-    [str(root_dir / "ulpf" / "dashboard" / "app.py")],
-    pathex=[str(root_dir)],
+    [str(root_dir / "src" / "ulpf_dashboard" / "server.py")],
+    pathex=[str(root_dir), str(root_dir / "src")],
     binaries=[],
     datas=datas,
     hiddenimports=hiddenimports,
@@ -141,8 +141,8 @@ exe_dash = EXE(
 # Target 3: ULPF-Launcher.exe (Primary Desktop Application Launcher)
 # -------------------------------------------------------------
 a_launcher = Analysis(
-    [str(root_dir / "packaging" / "windows" / "launcher.py")],
-    pathex=[str(root_dir)],
+    [str(root_dir / "tools" / "windows" / "launcher.py")],
+    pathex=[str(root_dir), str(root_dir / "src")],
     binaries=[],
     datas=datas,
     hiddenimports=hiddenimports,

@@ -27,7 +27,7 @@ Description: Universal Log Pre-processing Framework (ULPF)
 EOF
 
 # Install systemd service
-cp packaging/linux/ulpf-dashboard.service "${PKG_DIR}/etc/systemd/system/"
+cp tools/linux/ulpf-dashboard.service "${PKG_DIR}/etc/systemd/system/"
 
 # Post-install script
 cat << 'EOF' > "${PKG_DIR}/DEBIAN/postinst"

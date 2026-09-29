@@ -23,7 +23,7 @@
         </Component>
 
         <Component Id="AppIconFile" Guid="4F8E3C5A-9D7F-4E2B-8C1A-5F9E7D3A2B1F">
-          <File Id="IconIcoFile" Source="packaging\windows\ulpf_icon.ico" KeyPath="yes" />
+          <File Id="IconIcoFile" Source="tools\windows\ulpf_icon.ico" KeyPath="yes" />
         </Component>
 
         <Component Id="ReadmeFile" Guid="5F8E3C5A-9D7F-4E2B-8C1A-5F9E7D3A2B20">
@@ -73,7 +73,7 @@
       </Component>
     </StandardDirectory>
 
-    <Icon Id="AppIcon" SourceFile="packaging\windows\ulpf_icon.ico" />
+    <Icon Id="AppIcon" SourceFile="tools\windows\ulpf_icon.ico" />
     <Property Id="ARPPRODUCTICON" Value="AppIcon" />
     <Property Id="ARPHELPLINK" Value="https://github.com/NotUrNio/ULPF" />
     <Property Id="ARPURLINFOABOUT" Value="https://github.com/NotUrNio/ULPF" />

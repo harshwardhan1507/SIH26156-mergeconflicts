@@ -92,6 +92,7 @@ ulpf_dashboard = ["static/*", "py.typed"]
 [tool.pytest.ini_options]
 minversion = "7.4"
 testpaths = ["tests"]
+pythonpath = ["."]
 # `system_verification.py` is an operator smoke-test script, not a pytest module.
 addopts = "-q --strict-markers --strict-config"
 asyncio_mode = "auto"

@@ -29,7 +29,7 @@ def load_dashboard_config(output_dir: Path) -> dict[str, Any]:
     cfg_file = output_dir / "dashboard_config.json"
     if cfg_file.exists():
         try:
-            with open(cfg_file, "r", encoding="utf-8") as f:
+            with open(cfg_file, encoding="utf-8") as f:
                 return json.load(f)
         except Exception:
             pass
@@ -69,6 +69,9 @@ def get_settings(state: State) -> dict[str, Any]:
     }
 
 
+_bg_tasks: set[asyncio.Task[Any]] = set()
+
+
 @router.post("/port")
 async def update_port_settings(req: PortSettingsRequest, state: State) -> dict[str, Any]:
     """Update dashboard port setting and optionally trigger live restart on new port."""
@@ -83,7 +86,7 @@ async def update_port_settings(req: PortSettingsRequest, state: State) -> dict[s
     save_dashboard_config(state.output_dir, cfg)
 
     host = state.host
-    check_host = "127.0.0.1" if host in ("0.0.0.0", "::", "localhost") else host
+    check_host = "127.0.0.1" if host in ("0.0.0.0", "::", "localhost") else host  # noqa: S104
     redirect_url = f"http://{check_host}:{req.port}"
 
     if req.restart and req.port != old_port:
@@ -112,7 +115,9 @@ async def update_port_settings(req: PortSettingsRequest, state: State) -> dict[s
             except Exception as exc:
                 logger.error("Failed to spawn server on new port: %s", exc)
 
-        asyncio.create_task(_restart_server())
+        task = asyncio.create_task(_restart_server())
+        _bg_tasks.add(task)
+        task.add_done_callback(_bg_tasks.discard)
         return {
             "status": "ok",
             "message": f"Dashboard restarting on port {req.port}. Redirecting...",

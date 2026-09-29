@@ -23,7 +23,7 @@ def create_release_zip():
         ("ULPF-1.1.0-windows-x64.msi", dist_dir / "ULPF-1.1.0-windows-x64.msi"),
         ("ulpf.exe", dist_dir / "ulpf.exe"),
         ("ulpf-dashboard.exe", dist_dir / "ulpf-dashboard.exe"),
-        ("ulpf_icon.ico", standalone_dir / "packaging" / "windows" / "ulpf_icon.ico"),
+        ("ulpf_icon.ico", standalone_dir / "tools" / "windows" / "ulpf_icon.ico"),
         ("README.md", standalone_dir / "README.md"),
         ("LICENSE", standalone_dir / "LICENSE"),
         ("ULPF-1.1.0-linux-x64-portable.tar.gz", dist_dir / "ULPF-1.1.0-linux-x64-portable.tar.gz"),

@@ -30,7 +30,7 @@ if (-not (Test-Path $wixExe)) {
 
 if (Test-Path $wixExe) {
     Write-Host "[*] Using WiX executable: $wixExe" -ForegroundColor Green
-    $wxsPath = Join-Path $rootDir "packaging\windows\ulpf.wxs"
+    $wxsPath = Join-Path $rootDir "tools\windows\ulpf.wxs"
     $msiOut = Join-Path $distPath "ULPF-$Version-windows-x64.msi"
 
     Write-Host "[*] Compiling MSI installer package..." -ForegroundColor Yellow

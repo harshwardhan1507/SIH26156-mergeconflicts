@@ -150,11 +150,11 @@ def main():
     print(f"[*] Generating official branding and logo assets in {root}...")
 
     # 1. Write SVGs
-    dash_static = root / "ulpf" / "dashboard" / "static"
+    dash_static = root / "src" / "ulpf_dashboard" / "static"
     dash_static.mkdir(parents=True, exist_ok=True)
     docs_dir = root / "docs"
     docs_dir.mkdir(parents=True, exist_ok=True)
-    pkg_win = root / "packaging" / "windows"
+    pkg_win = root / "tools" / "windows"
     pkg_win.mkdir(parents=True, exist_ok=True)
 
     (dash_static / "ulpf-logo.svg").write_text(SVG_BADGE, encoding="utf-8")

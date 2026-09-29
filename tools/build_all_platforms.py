@@ -30,19 +30,19 @@ def main():
 
     # 1. Generate Icons
     print("\n[Stage 2/5] Generating multi-resolution application icons...")
-    run_script(root_dir / "packaging" / "windows" / "make_icon.py")
+    run_script(root_dir / "tools" / "windows" / "make_icon.py")
 
     # 2. Build Windows Executables & MSI
     print("\n[Stage 3/5] Building Windows Standalone Executables & MSI Installer...")
-    run_script(root_dir / "packaging" / "windows" / "build_exe.py")
+    run_script(root_dir / "tools" / "windows" / "build_exe.py")
 
     # 3. Build Linux Application Bundle
     print("\n[Stage 4/5] Building Linux Portable Bundle & Desktop App Integration...")
-    run_script(root_dir / "packaging" / "linux" / "make_linux_bundle.py")
+    run_script(root_dir / "tools" / "linux" / "make_linux_bundle.py")
 
     # 4. Build macOS Application Bundle
     print("\n[Stage 5/5] Building macOS Application Bundle (ULPF.app)...")
-    run_script(root_dir / "packaging" / "macos" / "make_macos_bundle.py")
+    run_script(root_dir / "tools" / "macos" / "make_macos_bundle.py")
 
     # Summary of generated packages
     print("\n======================================================================")

@@ -24,17 +24,17 @@ def main():
     print(f"Root directory: {root_dir}")
 
     # 1. Generate icon if needed
-    icon_path = root_dir / "packaging" / "windows" / "ulpf_icon.ico"
+    icon_path = root_dir / "tools" / "windows" / "ulpf_icon.ico"
     if not icon_path.exists():
         print("[1/5] Generating Windows application icon...")
-        subprocess.run([sys.executable, str(root_dir / "packaging" / "windows" / "make_icon.py")], check=True)
+        subprocess.run([sys.executable, str(root_dir / "tools" / "windows" / "make_icon.py")], check=True)
     else:
         print(f"[1/5] Found Windows application icon at {icon_path.name}")
 
     # 2. PyInstaller build
     dist_dir = root_dir / "dist"
     print("[2/5] Compiling standalone windowed executables with PyInstaller...")
-    spec_path = root_dir / "packaging" / "windows" / "ulpf.spec"
+    spec_path = root_dir / "tools" / "windows" / "ulpf.spec"
     cmd = [
         sys.executable,
         "-m",
@@ -103,7 +103,7 @@ def main():
 
     # 4. Build MSI Installer
     print("[5/5] Compiling Windows MSI Installer package...")
-    msi_script = root_dir / "packaging" / "windows" / "build_msi.ps1"
+    msi_script = root_dir / "tools" / "windows" / "build_msi.ps1"
     msi_res = subprocess.run(["powershell", "-ExecutionPolicy", "Bypass", "-File", str(msi_script), "-Version", VERSION])
     if msi_res.returncode != 0:
         print("[!] Note: MSI compilation returned non-zero. Check WiX logs above.")
